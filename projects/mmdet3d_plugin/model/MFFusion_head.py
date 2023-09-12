@@ -299,13 +299,66 @@ class MFFusionHead(nn.Module):
     def query_embed(self, ref_points, img_metas):
         bev_embeds = self._bev_query_embed(ref_points)
         return bev_embeds
+    
+    @torch.no_grad()  
+    def get_front_points_idx( self, points, frontboolmap_flatten ):
+        print( points.shape )
+        cfg = self.train_cfg if self.train_cfg else self.test_cfg
+        x_scale = cfg['voxel_size'][0]*cfg['out_size_factor']
+        y_scale = cfg['voxel_size'][1]*cfg['out_size_factor']
+        x_idx = torch.div( points[:,:, 0] / x_scale, rounding_mode='floor')
+        y_idx = torch.div( points[:,:, 1] / y_scale, rounding_mode='floor')
+        y_size = torch.div(cfg['grid_size'][1], cfg['out_size_factor'], rounding_mode='floor')
+        idx = y_idx * y_size + x_idx
+        front_points_idx = frontboolmap_flatten.gather( index = idx, dim = -1 )
+        return front_points_idx
+    
+    @torch.no_grad()    
+    def get_img_tokens_reference_points( self, ref_points, front_points_idx, img_feats, img_metas ):
+        B, N, _ = ref_points.shape
+        BV, C, H, W = img_feats.shape
+        V = BV/B
+        pad_h, pad_w, _ = img_metas[0]['pad_shape'][0]
+        reference_points = img_feats.new_zeros( B, V, H, W, 3 )
 
-    def forward_single(self, pts_feats, img_feats, img_metas):
+        lidars2imgs = np.stack([meta['lidar2img'] for meta in img_metas])
+        lidars2imgs = torch.from_numpy(lidars2imgs).float().to(ref_points.device)
+        imgs2lidars = np.stack([np.linalg.inv(meta['lidar2img']) for meta in img_metas])
+        imgs2lidars = torch.from_numpy(imgs2lidars).float().to(ref_points.device)
+
+        for i in range(B):
+            front_points = ref_points.gather[i][front_points_idx[i]]
+            print( front_points.shape )
+            proj_points = torch.einsum('nd, vcd -> vnc', torch.cat([front_points, front_points.new_ones(*front_points.shape[:-1], 1)], dim=-1), lidars2imgs[i])
+            proj_points_clone = proj_points.clone()
+            z_mask = proj_points_clone[..., 2:3].detach() > 0
+            proj_points_clone[..., :3] = proj_points[..., :3] / (proj_points[..., 2:3].detach() + z_mask * 1e-6 - (~z_mask) * 1e-6)
+            w_idx = torch.div( proj_points_clone[..., 0] / pad_w, rounding_mode='floor')
+            h_idx = torch.div( proj_points_clone[..., 1] / pad_h, rounding_mode='floor')
+            depth = proj_points[..., 2] 
+
+            ranks = w_idx*W + h_idx
+            sort = ( ranks + depth/1000. ).argsort(dim = -1)
+            w_idx = w_idx.gather(index = sort, dim = -1)
+            h_idx = h_idx.gather(index = sort, dim = -1)
+            depth = depth.gather(index = sort, dim = -1)
+            ranks = ranks.gather(index = sort, dim = -1)
+            kept = ranks.new_ones(*ranks.shape)
+            kept[:, 1:] = (ranks[:, 1:] != ranks[:, :-1])
+            w_idx, h_idx, depth = w_idx[kept], h_idx[kept], depth[kept]
+            front_points = front_points[kept]
+            for j in range(V):
+                reference_points[i, j, h_idx[j], w_idx[j]] = front_points
+        
+        reference_points = reference_points.view( BV, W, H, 3).permute( 0, 3, 1, 2 )
+
+        return reference_points
+
+    def forward_single(self, points, pts_feats, img_feats, img_metas):
 
         batch_size, _, H, W = pts_feats.shape
         valid_token_nums = H*W
         feat_pc = self.shared_conv(pts_feats)
-
 
         #################################
         # image to BEV
@@ -314,6 +367,9 @@ class MFFusionHead(nn.Module):
                                     feat_pc.shape[1],
                                     -1)  # [BS, C, H*W]
         bev_pos = self.bev_pos.repeat(batch_size, 1, 1).to(feat_flatten.device)
+
+        key_embed = feat_flatten.transpose( 1, 2 )
+        key_pos_embed = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
 
 
         #################################
@@ -331,14 +387,22 @@ class MFFusionHead(nn.Module):
             frontboolmap_flatten[i, front_idx[i]] = 1.0
         frontboolmap = frontboolmap_flatten.view(batch_size, H, W)
 
-        front_feat_flatten = feat_flatten.gather( index = front_idx[:, None, :].expand(
-            -1, feat_flatten.shape[1], -1), dim = -1 )
-        front_pos =  bev_pos.gather(
-            index= front_idx[..., None].expand(
-                -1, -1, bev_pos.shape[-1]), dim=1 )
+        front_points_idx = self.get_front_points_idx( points, frontboolmap_flatten )
+        print( front_points_idx.shape )
+        img_tokens_reference_points = self.get_img_tokens_reference_points( 
+            points, front_points_idx, img_feats, img_metas
+        )
 
-        key_embed = front_feat_flatten.transpose( 1, 2 )
-        key_pos_embed = self.bev_embedding(self.pos2embed( front_pos, num_pos_feats = self.pos_embed_channel ))
+
+#
+        #front_feat_flatten = feat_flatten.gather( index = front_idx[:, None, :].expand(
+        #    -1, feat_flatten.shape[1], -1), dim = -1 )
+        #front_pos =  bev_pos.gather(
+        #    index= front_idx[..., None].expand(
+        #        -1, -1, bev_pos.shape[-1]), dim=1 )
+#
+        #key_embed = front_feat_flatten.transpose( 1, 2 )
+        #key_pos_embed = self.bev_embedding(self.pos2embed( front_pos, num_pos_feats = self.pos_embed_channel ))
 
         #################################
         # query initialization
@@ -346,7 +410,7 @@ class MFFusionHead(nn.Module):
         with torch.autocast('cuda', enabled=False):
             dense_heatmap = self.heatmap_head(feat_pc.float())
         heatmap = dense_heatmap.detach().sigmoid()
-        heatmap = heatmap * frontboolmap[:, None, ...]
+        #heatmap = heatmap * frontboolmap[:, None, ...]
 
         padding = self.nms_kernel_size // 2
         local_max = torch.zeros_like(heatmap)
@@ -428,7 +492,7 @@ class MFFusionHead(nn.Module):
         return [ret_dict]
         
     
-    def forward(self, pts_feats, img_feats, metas):
+    def forward(self, points, pts_feats, img_feats, metas):
         """Forward pass.
 
         Args:
@@ -438,11 +502,13 @@ class MFFusionHead(nn.Module):
             tuple(list[dict]): Output results. first index by level, second
             index by layer
         """
+        if isinstance(points, torch.Tensor):
+            points = [points]
         if isinstance(pts_feats, torch.Tensor):
             pts_feats = [pts_feats]
         if isinstance(img_feats, torch.Tensor):
             img_feats = [img_feats]
-        res = multi_apply(self.forward_single, pts_feats, img_feats, [metas])
+        res = multi_apply(self.forward_single, points, pts_feats, img_feats, [metas])
         assert len(res) == 1, 'only support one level features.'
         return res
     
@@ -675,7 +741,7 @@ class MFFusionHead(nn.Module):
             frontmap[None],
         )
     
-    def loss(self, pts_feats, img_feats, batch_data_samples):
+    def loss(self, points, pts_feats, img_feats, batch_data_samples):
         """Loss function for CenterHead.
 
         Args:
@@ -694,7 +760,7 @@ class MFFusionHead(nn.Module):
         for data_sample in batch_data_samples:
             batch_input_metas.append(data_sample.metainfo)
             batch_gt_instances_3d.append(data_sample.gt_instances_3d)
-        preds_dicts = self(pts_feats, img_feats, batch_input_metas)
+        preds_dicts = self(points, pts_feats, img_feats, batch_input_metas)
         loss = self.loss_by_feat(preds_dicts, batch_gt_instances_3d)
 
         return loss
