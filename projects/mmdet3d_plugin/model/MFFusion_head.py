@@ -332,33 +332,36 @@ class MFFusionHead(nn.Module):
         proj_points_clone = proj_points.clone()
         z_mask = (proj_points[..., 2:3].detach() > 0) & ( proj_points[..., 2:3].detach() < 1000.0 )
         proj_points_clone[..., :3] = proj_points[..., :3] / (proj_points[..., 2:3].detach() + z_mask * 1e-6 - (~z_mask) * 1e-6)
-        w_idx = torch.div( proj_points_clone[..., 0], 16, rounding_mode='floor')
-        h_idx = torch.div( proj_points_clone[..., 1], 16, rounding_mode='floor')
+        w_idx = torch.div( proj_points_clone[..., 0], 16, rounding_mode='floor').long()
+        h_idx = torch.div( proj_points_clone[..., 1], 16, rounding_mode='floor').long()
         mask = ( w_idx < W ) & ( w_idx >= 0) & ( h_idx < H ) & ( h_idx >= 0 )
         mask &= z_mask.squeeze(-1)
         depth = proj_points[..., 2] 
-        w_idx[~mask], h_idx[~mask], depth[~mask] = W-1, H, 10000.0
+        w_idx[~mask], h_idx[~mask], depth[~mask] = W, H, 1000.0
         #print( w_idx.shape )
-        ranks = w_idx*H + h_idx
-        sort = ( ranks + depth/1000. ).argsort(dim = -1)
+        ranks = h_idx*W + w_idx
+        sort = ( ranks + depth/1001. ).argsort(dim = -1)
         w_idx = w_idx.gather(index = sort, dim = -1)
         h_idx = h_idx.gather(index = sort, dim = -1)
         depth = depth.gather(index = sort, dim = -1)
         ranks = ranks.gather(index = sort, dim = -1)
         kept = ranks.new_ones(*ranks.shape, dtype=torch.bool)
         kept[:, 1:] = (ranks[:, 1:] != ranks[:, :-1])
-        print( kept.shape )
+        #print( kept.shape )
         
-        print( w_idx.shape )
-        print( h_idx.shape )
+        #print( w_idx.shape )
+        #print( h_idx.shape )
         #assert w_idx.shape == (V, W+1)
         #assert h_idx.shape == (V, H+1) 
         for i in range(V):
-            w_idx_i, h_idx_i, depth = w_idx[kept], h_idx[kept], depth[kept]
-            front_points_i = front_points[kept[i],:]
-            reference_points[ i, h_idx[i][:-1], w_idx[i][:-1]] = front_points_i
+            w_idx_i, h_idx_i = w_idx[i, kept[i]], h_idx[i, kept[i]]
+            #print( w_idx_i.shape )
+            #print(w_idx_i.device)
+            front_points_i = front_points[kept[i]]
+            #print( front_points_i.shape )
+            reference_points[ i, h_idx_i[:-1], w_idx_i[:-1]] = front_points_i[:-1]
         
-        reference_points = reference_points.view( V, W, H, 3).permute( 0, 3, 1, 2 )
+        #reference_points = reference_points.view( V, W, H, 3).permute( 0, 3, 1, 2 )
         return reference_points
 
     def forward_single(self, points, pts_feats, img_feats, img_metas):
