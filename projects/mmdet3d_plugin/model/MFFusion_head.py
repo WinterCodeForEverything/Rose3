@@ -65,6 +65,7 @@ class MFFusionHead(nn.Module):
         self.nms_kernel_size = nms_kernel_size
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
+        self.pc_range = train_cfg['point_cloud_range']
 
         self.use_sigmoid_cls = loss_cls.get('use_sigmoid', False)
         if not self.use_sigmoid_cls:
@@ -301,57 +302,63 @@ class MFFusionHead(nn.Module):
         return bev_embeds
     
     @torch.no_grad()  
-    def get_front_points_idx( self, points, frontboolmap_flatten ):
-        print( points.shape )
+    def get_front_points( self, points, frontboolmap_flatten ):
         cfg = self.train_cfg if self.train_cfg else self.test_cfg
-        x_scale = cfg['voxel_size'][0]*cfg['out_size_factor']
-        y_scale = cfg['voxel_size'][1]*cfg['out_size_factor']
-        x_idx = torch.div( points[:,:, 0] / x_scale, rounding_mode='floor')
-        y_idx = torch.div( points[:,:, 1] / y_scale, rounding_mode='floor')
+        x_normal = (points[..., 0] - self.pc_range[0]) / (self.pc_range[3] - self.pc_range[0])
+        y_normal = (points[..., 1] - self.pc_range[1]) / (self.pc_range[4] - self.pc_range[1])
+        x_size = torch.div(cfg['grid_size'][0], cfg['out_size_factor'], rounding_mode='floor')
         y_size = torch.div(cfg['grid_size'][1], cfg['out_size_factor'], rounding_mode='floor')
-        idx = y_idx * y_size + x_idx
-        front_points_idx = frontboolmap_flatten.gather( index = idx, dim = -1 )
-        return front_points_idx
+        x_idx = ( x_normal*x_size ).long()
+        y_idx = ( y_normal*y_size ).long()
+        idx = y_idx * x_size + x_idx
+        front_points_mask = frontboolmap_flatten.gather( index = idx, dim = -1 )
+        #print( front_points_mask.shape )
+        return points[front_points_mask, :3]
     
     @torch.no_grad()    
-    def get_img_tokens_reference_points( self, ref_points, front_points_idx, img_feats, img_metas ):
-        B, N, _ = ref_points.shape
-        BV, C, H, W = img_feats.shape
-        V = BV/B
-        pad_h, pad_w, _ = img_metas[0]['pad_shape'][0]
-        reference_points = img_feats.new_zeros( B, V, H, W, 3 )
+    def get_img_tokens_reference_points( self, front_points, img_feats, meta ):
+        N, _ = front_points.shape
+        V, C, H, W = img_feats.shape
+        #print(meta.keys())
+        #pad_h, pad_w, _ = meta['pad_shape'][0]
+        #print( pad_h, pad_w )
+        reference_points = img_feats.new_zeros( V, H, W, 3 )
 
-        lidars2imgs = np.stack([meta['lidar2img'] for meta in img_metas])
-        lidars2imgs = torch.from_numpy(lidars2imgs).float().to(ref_points.device)
-        imgs2lidars = np.stack([np.linalg.inv(meta['lidar2img']) for meta in img_metas])
-        imgs2lidars = torch.from_numpy(imgs2lidars).float().to(ref_points.device)
+        lidars2imgs = torch.from_numpy(meta['lidar2img']).float().to(front_points.device)
+        #imgs2lidars = torch.linalg.inv(lidars2imgs)
 
-        for i in range(B):
-            front_points = ref_points.gather[i][front_points_idx[i]]
-            print( front_points.shape )
-            proj_points = torch.einsum('nd, vcd -> vnc', torch.cat([front_points, front_points.new_ones(*front_points.shape[:-1], 1)], dim=-1), lidars2imgs[i])
-            proj_points_clone = proj_points.clone()
-            z_mask = proj_points_clone[..., 2:3].detach() > 0
-            proj_points_clone[..., :3] = proj_points[..., :3] / (proj_points[..., 2:3].detach() + z_mask * 1e-6 - (~z_mask) * 1e-6)
-            w_idx = torch.div( proj_points_clone[..., 0] / pad_w, rounding_mode='floor')
-            h_idx = torch.div( proj_points_clone[..., 1] / pad_h, rounding_mode='floor')
-            depth = proj_points[..., 2] 
-
-            ranks = w_idx*W + h_idx
-            sort = ( ranks + depth/1000. ).argsort(dim = -1)
-            w_idx = w_idx.gather(index = sort, dim = -1)
-            h_idx = h_idx.gather(index = sort, dim = -1)
-            depth = depth.gather(index = sort, dim = -1)
-            ranks = ranks.gather(index = sort, dim = -1)
-            kept = ranks.new_ones(*ranks.shape)
-            kept[:, 1:] = (ranks[:, 1:] != ranks[:, :-1])
-            w_idx, h_idx, depth = w_idx[kept], h_idx[kept], depth[kept]
-            front_points = front_points[kept]
-            for j in range(V):
-                reference_points[i, j, h_idx[j], w_idx[j]] = front_points
+        proj_points = torch.einsum('nd, vcd -> vnc', torch.cat([front_points, front_points.new_ones(*front_points.shape[:-1], 1)], dim=-1), lidars2imgs)
+        #print( proj_points.shape )
+        proj_points_clone = proj_points.clone()
+        z_mask = (proj_points[..., 2:3].detach() > 0) & ( proj_points[..., 2:3].detach() < 1000.0 )
+        proj_points_clone[..., :3] = proj_points[..., :3] / (proj_points[..., 2:3].detach() + z_mask * 1e-6 - (~z_mask) * 1e-6)
+        w_idx = torch.div( proj_points_clone[..., 0], 16, rounding_mode='floor')
+        h_idx = torch.div( proj_points_clone[..., 1], 16, rounding_mode='floor')
+        mask = ( w_idx < W ) & ( w_idx >= 0) & ( h_idx < H ) & ( h_idx >= 0 )
+        mask &= z_mask.squeeze(-1)
+        depth = proj_points[..., 2] 
+        w_idx[~mask], h_idx[~mask], depth[~mask] = W-1, H, 10000.0
+        #print( w_idx.shape )
+        ranks = w_idx*H + h_idx
+        sort = ( ranks + depth/1000. ).argsort(dim = -1)
+        w_idx = w_idx.gather(index = sort, dim = -1)
+        h_idx = h_idx.gather(index = sort, dim = -1)
+        depth = depth.gather(index = sort, dim = -1)
+        ranks = ranks.gather(index = sort, dim = -1)
+        kept = ranks.new_ones(*ranks.shape, dtype=torch.bool)
+        kept[:, 1:] = (ranks[:, 1:] != ranks[:, :-1])
+        print( kept.shape )
         
-        reference_points = reference_points.view( BV, W, H, 3).permute( 0, 3, 1, 2 )
-
+        print( w_idx.shape )
+        print( h_idx.shape )
+        #assert w_idx.shape == (V, W+1)
+        #assert h_idx.shape == (V, H+1) 
+        for i in range(V):
+            w_idx_i, h_idx_i, depth = w_idx[kept], h_idx[kept], depth[kept]
+            front_points_i = front_points[kept[i],:]
+            reference_points[ i, h_idx[i][:-1], w_idx[i][:-1]] = front_points_i
+        
+        reference_points = reference_points.view( V, W, H, 3).permute( 0, 3, 1, 2 )
         return reference_points
 
     def forward_single(self, points, pts_feats, img_feats, img_metas):
@@ -382,17 +389,15 @@ class MFFusionHead(nn.Module):
 
         front_idx = frontmap_flatten.argsort(
                     dim=-1, descending=True)[..., :focus_token_nums]
-        frontboolmap_flatten= frontmap_flatten.new_zeros(*frontmap_flatten.shape)
-        for i in range( batch_size ):
-            frontboolmap_flatten[i, front_idx[i]] = 1.0
+        frontboolmap_flatten= frontmap_flatten.new_zeros(*frontmap_flatten.shape, dtype=torch.bool)
+
+        #print( img_feats.shape )
+        for i in range(batch_size):
+            frontboolmap_flatten[i, front_idx[i]] = True
+            front_points = self.get_front_points( points[i], frontboolmap_flatten[i] )
+            img_tokens_reference_points = self.get_img_tokens_reference_points( 
+                front_points, img_feats[i], img_metas[i] )
         frontboolmap = frontboolmap_flatten.view(batch_size, H, W)
-
-        front_points_idx = self.get_front_points_idx( points, frontboolmap_flatten )
-        print( front_points_idx.shape )
-        img_tokens_reference_points = self.get_img_tokens_reference_points( 
-            points, front_points_idx, img_feats, img_metas
-        )
-
 
 #
         #front_feat_flatten = feat_flatten.gather( index = front_idx[:, None, :].expand(
@@ -502,13 +507,13 @@ class MFFusionHead(nn.Module):
             tuple(list[dict]): Output results. first index by level, second
             index by layer
         """
-        if isinstance(points, torch.Tensor):
-            points = [points]
+        #if isinstance(points, torch.Tensor):
+        #    points = [points]
         if isinstance(pts_feats, torch.Tensor):
             pts_feats = [pts_feats]
         if isinstance(img_feats, torch.Tensor):
             img_feats = [img_feats]
-        res = multi_apply(self.forward_single, points, pts_feats, img_feats, [metas])
+        res = multi_apply(self.forward_single, [points], pts_feats, img_feats, [metas])
         assert len(res) == 1, 'only support one level features.'
         return res
     

@@ -39,9 +39,9 @@ model = dict(
 db_sampler= {{_base_.db_sampler}}
 train_pipeline = [
     dict(
-        type='LoadMultiViewImageFromFiles',
+        type='BEVLoadMultiViewImageFromFiles',
         to_float32=True,
-        #color_type='color',
+        color_type='color',
         backend_args=backend_args),
     dict(
         type='LoadPointsFromFile',
@@ -114,16 +114,22 @@ test_pipeline = [
         rot_lim=[0.0, 0.0],
         rand_flip=False,
         is_train=False),
-    dict(
-        type='PointsRangeFilter',
-        point_cloud_range=[-54.0, -54.0, -5.0, 54.0, 54.0, 3.0]),
+    dict(type='PointsRangeFilter', point_cloud_range=point_cloud_range),
+    dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
+    dict(type='ObjectNameFilter', classes=class_names),
+    dict(type='PointShuffle'),
     dict(
         type='Pack3DDetInputs',
-        keys=['img', 'points', 'gt_bboxes_3d', 'gt_labels_3d'],
+        keys=[
+            'points', 'img', 'gt_bboxes_3d', 'gt_labels_3d', 'gt_bboxes',
+            'gt_labels'
+        ],
         meta_keys=[
             'cam2img', 'ori_cam2img', 'lidar2cam', 'lidar2img', 'cam2lidar',
             'ori_lidar2img', 'img_aug_matrix', 'box_type_3d', 'sample_idx',
-            'lidar_path', 'img_path', 'num_pts_feats', 'num_views'
+            'lidar_path', 'img_path', 'transformation_3d_flow', 'pcd_rotation',
+            'pcd_scale_factor', 'pcd_trans', 'img_aug_matrix',
+            'lidar_aug_matrix', 'num_pts_feats'
         ])
 ]
 

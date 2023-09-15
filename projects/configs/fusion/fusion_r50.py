@@ -42,9 +42,9 @@ model = dict(
 db_sampler= {{_base_.db_sampler}}
 train_pipeline = [
     dict(
-        type='LoadMultiViewImageFromFiles',
+        type='BEVLoadMultiViewImageFromFiles',
         to_float32=True,
-        #color_type='color',
+        color_type='color',
         backend_args=backend_args),
     dict(
         type='LoadPointsFromFile',
@@ -87,7 +87,7 @@ train_pipeline = [
             'ori_lidar2img', 'img_aug_matrix', 'box_type_3d', 'sample_idx',
             'lidar_path', 'img_path', 'transformation_3d_flow', 'pcd_rotation',
             'pcd_scale_factor', 'pcd_trans', 'img_aug_matrix',
-            'lidar_aug_matrix', 'num_pts_feats'
+            'lidar_aug_matrix', 'num_pts_feats', 'pad_shape',
         ])
 ]
 test_pipeline = [

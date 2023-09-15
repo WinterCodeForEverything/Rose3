@@ -7,14 +7,14 @@ from .utils import (BBoxBEVL1Cost, HeuristicAssigner3D, HungarianAssigner3D,
 from .vovnetcp import VoVNetCP
 from .cp_fpn import CPFPN
 from .grid_mask import GridMask
-#from .loading import BEVLoadMultiViewImageFromFiles
+from .loading import BEVLoadMultiViewImageFromFiles
 
 
 __all__ = [
     'MFDetector', 'MFFusionHead', 'HungarianAssigner3D',
     'BBoxBEVL1Cost', 'IoU3DCost', 'HeuristicAssigner3D', 'TransformerDecoderLayer',
     'BEVFusionGlobalRotScaleTrans', 'BEVFusionRandomFlip3D', 'CPFPN',
-    'VoVNetCP', 'GridMask',
+    'VoVNetCP', 'GridMask', 'BEVLoadMultiViewImageFromFiles'
 ]
 
 

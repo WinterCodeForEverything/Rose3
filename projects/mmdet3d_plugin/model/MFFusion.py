@@ -73,7 +73,11 @@ class MFDetector(MVXTwoStageDetector):
             return None
         if self.with_img_neck:
             img_feats = self.img_neck(img_feats)
-        return img_feats
+        img_feats_reshaped = []
+        for img_feat in img_feats:
+            BN, C, H, W = img_feat.size()
+            img_feats_reshaped.append(img_feat.view(B, int(BN / B), C, H, W))
+        return img_feats_reshaped[0]
 
     def extract_pts_feat(self, points):
         """Extract features of points."""
@@ -106,9 +110,9 @@ class MFDetector(MVXTwoStageDetector):
         voxels, coors, num_points = [], [], []
         for res in points:
             res_voxels, res_coors, res_num_points = self.pts_voxel_layer(res)
-            print( res_voxels.shape )
-            print( res_coors.shape )
-            print( res_num_points.shape )
+            #print( res_voxels.shape )
+            #print( res_coors.shape )
+            #print( res_num_points.shape )
             voxels.append(res_voxels)
             coors.append(res_coors)
             num_points.append(res_num_points)
@@ -139,15 +143,8 @@ class MFDetector(MVXTwoStageDetector):
         """
         imgs = batch_inputs_dict.get('img', None)
         points = batch_inputs_dict.get('points', None)
-        print( len( points ) )
-        print( points[0].shape )
-        print( points[1].shape )
         img_feats = self.extract_img_feat(imgs, batch_input_metas)
-        #print(len(img_feats))
-        #print( img_feats[0].shape )
         pts_feats = self.extract_pts_feat(points)
-        #print(len(pts_feats))
-        #print( pts_feats[0].shape )
         return ( points, pts_feats, img_feats )
 
     def loss(self, batch_inputs_dict: Dict[List, torch.Tensor],
