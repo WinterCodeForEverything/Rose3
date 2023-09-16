@@ -74,11 +74,11 @@ model = dict(
         bn_momentum=0.1,
         decoder_layer=dict(
             type='TransformerDecoderLayer',
-            self_attn_cfg=dict(embed_dims=128, num_heads=8, dropout=0.1),
-            cross_attn_cfg=dict(embed_dims=128, num_heads=8, dropout=0.1),
+            self_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.1),
+            cross_attn_cfg=dict(embed_dims=256, num_heads=8, dropout=0.1),
             ffn_cfg=dict(
-                embed_dims=128,
-                feedforward_channels=256,
+                embed_dims=256,
+                feedforward_channels=1024,
                 num_fcs=2,
                 ffn_drop=0.1,
                 act_cfg=dict(type='ReLU', inplace=True),
