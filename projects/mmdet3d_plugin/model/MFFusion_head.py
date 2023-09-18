@@ -142,12 +142,12 @@ class MFFusionHead(nn.Module):
             nn.Linear(hidden_channel, hidden_channel)
         )
 
-        self.depth_num = 64
-        self.rv_embedding = nn.Sequential(
-            nn.Linear(self.depth_num * 3, hidden_channel * 4),
-            nn.ReLU(inplace=True),
-            nn.Linear( hidden_channel * 4, hidden_channel)
-        )
+        # self.depth_num = 64
+        # self.rv_embedding = nn.Sequential(
+        #     nn.Linear(self.depth_num * 3, hidden_channel * 4),
+        #     nn.ReLU(inplace=True),
+        #     nn.Linear( hidden_channel * 4, hidden_channel)
+        # )
         self.decoder = MODELS.build(decoder_layer)
 
         # Prediction Head
@@ -232,7 +232,6 @@ class MFFusionHead(nn.Module):
 
         coords = torch.stack([coords_w, coords_h, coords_d, coords_h.new_ones(coords_h.shape)], dim=-1)
         coords[..., :2] = coords[..., :2] * coords[..., 2:3]
-        
         imgs2lidars = np.concatenate([np.linalg.inv(meta['lidar2img']) for meta in img_metas])
         imgs2lidars = torch.from_numpy(imgs2lidars).float().to(coords.device)
         coords_3d = torch.einsum('hwdo, bco -> bhwdc', coords, imgs2lidars)
@@ -351,15 +350,14 @@ class MFFusionHead(nn.Module):
     def get_img_tokens_reference_points( self, front_points, img_feats, meta ):
         #N, _ = front_points.shape
         V, C, H, W = img_feats.shape
-        #print(meta.keys())
-        #pad_h, pad_w, _ = meta['pad_shape'][0]
-        #print( pad_h, pad_w )
         reference_points = img_feats.new_zeros( V, H, W, 2 )
 
+        lidar_aug_matrix = torch.from_numpy(meta['lidar_aug_matrix']).float().to(front_points.device)
         lidars2imgs = torch.from_numpy(meta['lidar2img']).float().to(front_points.device)
-        #imgs2lidars = torch.linalg.inv(lidars2imgs)
+        img_aug_matrix = torch.from_numpy(meta['img_aug_matrix']).float().to(front_points.device)
+        lidars2imgs_aug = torch.linalg.inv(lidar_aug_matrix) @ lidars2imgs @ img_aug_matrix
 
-        proj_points = torch.einsum('nd, vcd -> vnc', torch.cat([front_points, front_points.new_ones(*front_points.shape[:-1], 1)], dim=-1), lidars2imgs)
+        proj_points = torch.einsum('nd, vcd -> vnc', torch.cat([front_points, front_points.new_ones(*front_points.shape[:-1], 1)], dim=-1), lidars2imgs_aug)
         #print( proj_points.shape )
         proj_points_clone = proj_points.clone()
         z_mask = (proj_points[..., 2:3].detach() > 0) & ( proj_points[..., 2:3].detach() < 1000.0 )
@@ -414,12 +412,16 @@ class MFFusionHead(nn.Module):
         bev_pos = self.bev_pos.repeat(batch_size, 1, 1).to(feat_pc_flatten.device)
         pc_pe = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
 
-        B, V, C, H_, W_ = img_feats.shape
-        feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4 ).reshape( B, C, -1 )
-        img_pe = self._rv_pe( img_feats, img_metas ).reshape(B, V*H_*W_, -1)
+        if img_feats is not None:
+            B, V, C, H_, W_ = img_feats.shape
+            feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4 ).reshape( B, C, -1 )
+            img_pe = self._rv_pe( img_feats, img_metas ).reshape(B, V*H_*W_, -1)
 
-        key_embed = torch.cat(( feat_pc_flatten, feat_img_flatten ), dim= -1 ) .transpose( 1, 2 )
-        key_pos_embed = torch.cat(( pc_pe, img_pe ), dim= 1 )
+            key_embed = torch.cat(( feat_pc_flatten, feat_img_flatten ), dim= -1 ).transpose( 1, 2 )
+            key_pos_embed = torch.cat(( pc_pe, img_pe ), dim= 1 )
+        else:
+            key_embed = feat_pc_flatten.transpose( 1, 2 )
+            key_pos_embed = pc_pe
 
         #key_embed = feat_pc_flatten.transpose( 1, 2 )
         #key_pos_embed = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
@@ -909,8 +911,8 @@ class MFFusionHead(nn.Module):
 
         return loss_dict
     
-    def predict(self, batch_feats, batch_input_metas):
-        preds_dicts = self(batch_feats, batch_input_metas)
+    def predict(self, points, batch_feats_pc, batch_feats_img, batch_input_metas):
+        preds_dicts = self(points, batch_feats_pc, batch_feats_img, batch_input_metas)
         res = self.predict_by_feat(preds_dicts, batch_input_metas)
         return res
     
