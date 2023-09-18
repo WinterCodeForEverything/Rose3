@@ -53,6 +53,7 @@ class MFDetector(MVXTwoStageDetector):
         """Extract features of images."""
         if isinstance(img, list):
             img = torch.stack(img, dim=0)
+
         if self.with_img_backbone and img is not None:
             input_shape = img.shape[-2:]
             # update real input shape of each single img
@@ -71,6 +72,7 @@ class MFDetector(MVXTwoStageDetector):
                 img_feats = list(img_feats.values())
         else:
             return None
+        B = img.size(0)
         if self.with_img_neck:
             img_feats = self.img_neck(img_feats)
         img_feats_reshaped = []
@@ -110,9 +112,6 @@ class MFDetector(MVXTwoStageDetector):
         voxels, coors, num_points = [], [], []
         for res in points:
             res_voxels, res_coors, res_num_points = self.pts_voxel_layer(res)
-            #print( res_voxels.shape )
-            #print( res_coors.shape )
-            #print( res_num_points.shape )
             voxels.append(res_voxels)
             coors.append(res_coors)
             num_points.append(res_num_points)
