@@ -410,21 +410,15 @@ class MFFusionHead(nn.Module):
                                     feat_pc.shape[1],
                                     -1)  # [BS, C, H*W]
         bev_pos = self.bev_pos.repeat(batch_size, 1, 1).to(feat_pc_flatten.device)
-        pc_pe = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
-
+        key_embed = feat_pc_flatten.transpose( 1, 2 )
+        key_pos_embed = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
         if img_feats is not None:
             B, V, C, H_, W_ = img_feats.shape
             feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4 ).reshape( B, C, -1 )
             img_pe = self._rv_pe( img_feats, img_metas ).reshape(B, V*H_*W_, -1)
 
-            key_embed = torch.cat(( feat_pc_flatten, feat_img_flatten ), dim= -1 ).transpose( 1, 2 )
-            key_pos_embed = torch.cat(( pc_pe, img_pe ), dim= 1 )
-        else:
-            key_embed = feat_pc_flatten.transpose( 1, 2 )
-            key_pos_embed = pc_pe
-
-        #key_embed = feat_pc_flatten.transpose( 1, 2 )
-        #key_pos_embed = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
+            key_embed = torch.cat(( key_embed, feat_img_flatten.transpose( 1, 2 ) ), dim= 1 )
+            key_pos_embed = torch.cat(( key_pos_embed, img_pe ), dim= 1 )
 
 
         #################################
@@ -564,13 +558,13 @@ class MFFusionHead(nn.Module):
             tuple(list[dict]): Output results. first index by level, second
             index by layer
         """
-        #if isinstance(points, torch.Tensor):
-        #    points = [points]
+        if isinstance(points, torch.Tensor):
+            points = [points]
         if isinstance(pts_feats, torch.Tensor):
             pts_feats = [pts_feats]
         if isinstance(img_feats, torch.Tensor):
             img_feats = [img_feats]
-        res = multi_apply(self.forward_single, [points], pts_feats, img_feats, [metas])
+        res = multi_apply(self.forward_single, points, pts_feats, img_feats, [metas])
         assert len(res) == 1, 'only support one level features.'
         return res
     
@@ -814,6 +808,8 @@ class MFFusionHead(nn.Module):
         Returns:
             dict[str:torch.Tensor]: Loss of heatmap and bbox of each task.
         """
+        if points is None:
+            points = [None]
         if pts_feats is None:
             pts_feats = [None]
         if img_feats is None:
@@ -911,8 +907,14 @@ class MFFusionHead(nn.Module):
 
         return loss_dict
     
-    def predict(self, points, batch_feats_pc, batch_feats_img, batch_input_metas):
-        preds_dicts = self(points, batch_feats_pc, batch_feats_img, batch_input_metas)
+    def predict(self, points, pts_feats, img_feats, batch_input_metas):
+        if points is None:
+            points = [None]
+        if pts_feats is None:
+            pts_feats = [None]
+        if img_feats is None:
+            img_feats = [None]
+        preds_dicts = self(points, pts_feats, img_feats, batch_input_metas)
         res = self.predict_by_feat(preds_dicts, batch_input_metas)
         return res
     
