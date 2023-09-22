@@ -15,7 +15,9 @@ from mmdet3d.structures import Det3DDataSample
 from mmdet3d.utils import OptMultiConfig, OptSampleList
 
 from .grid_mask import GridMask
-from .ops import SPConvVoxelization
+#from .ops import SPConvVoxelization
+
+from .ops2 import Voxelization
 
 
 
@@ -24,16 +26,22 @@ class MFDetector(MVXTwoStageDetector):
     def __init__(
         self,
         use_grid_mask=False,
+        data_preprocessor=None,
         **kwargs,
     ) -> None:
-        pts_voxel_cfg = kwargs.get('pts_voxel_layer', None)
-        kwargs.pop('pts_voxel_layer')
-        super(MFDetector, self).__init__(**kwargs)
+        #pts_voxel_cfg = kwargs.get('pts_voxel_layer', None)
+        #kwargs.pop('pts_voxel_layer')
+        voxelize_cfg = data_preprocessor.pop('voxelize_cfg')
+        super(MFDetector, self).__init__(data_preprocessor=data_preprocessor, **kwargs)
+
+        self.voxelize_reduce = voxelize_cfg.pop('voxelize_reduce')
+        self.pts_voxel_layer = Voxelization(**voxelize_cfg)
+
 
         self.use_grid_mask = use_grid_mask
         self.grid_mask = GridMask(True, True, rotate=1, offset=False, ratio=0.5, mode=1, prob=0.7)
-        if pts_voxel_cfg:
-            self.pts_voxel_layer = SPConvVoxelization(**pts_voxel_cfg)
+        #if pts_voxel_cfg:
+        #    self.pts_voxel_layer = SPConvVoxelization(**pts_voxel_cfg)
 
     def _forward(self,
                  batch_inputs: Tensor,
@@ -55,6 +63,7 @@ class MFDetector(MVXTwoStageDetector):
             img = torch.stack(img, dim=0)
 
         if self.with_img_backbone and img is not None:
+            B = img.shape[0]
             input_shape = img.shape[-2:]
             # update real input shape of each single img
             for img_meta in img_metas:
@@ -70,33 +79,16 @@ class MFDetector(MVXTwoStageDetector):
             img_feats = self.img_backbone(img.float())
             if isinstance(img_feats, dict):
                 img_feats = list(img_feats.values())
+            
+            if self.with_img_neck:
+                img_feats = self.img_neck(img_feats)
+            img_feats_reshaped = []
+            for img_feat in img_feats:
+                BN, C, H, W = img_feat.size()
+                img_feats_reshaped.append(img_feat.view(B, int(BN / B), C, H, W))
+            return img_feats_reshaped[0]
         else:
             return None
-        B = img.size(0)
-        if self.with_img_neck:
-            img_feats = self.img_neck(img_feats)
-        img_feats_reshaped = []
-        for img_feat in img_feats:
-            BN, C, H, W = img_feat.size()
-            img_feats_reshaped.append(img_feat.view(B, int(BN / B), C, H, W))
-        return img_feats_reshaped[0]
-
-    def extract_pts_feat(self, points):
-        """Extract features of points."""
-        if not self.with_pts_bbox:
-            return None
-        if points is None:
-            return None
-        voxels, num_points, coors = self.voxelize(points)
-        voxel_features = self.pts_voxel_encoder(voxels, num_points, coors,
-                                                )
-        batch_size = coors[-1, 0] + 1
-        x = self.pts_middle_encoder(voxel_features, coors, batch_size)
-        
-        x = self.pts_backbone(x)
-        if self.with_pts_neck:
-            x = self.pts_neck(x)
-        return x
     
     @torch.no_grad()
     def voxelize(self, points):
@@ -124,6 +116,67 @@ class MFDetector(MVXTwoStageDetector):
         coors_batch = torch.cat(coors_batch, dim=0)
         return voxels, num_points, coors_batch
 
+
+    def extract_pts_feat(self, points):
+        """Extract features of points."""
+        if not self.with_pts_bbox:
+            return None
+        if points is None:
+            return None
+        voxels, num_points, coors = self.voxelize(points)
+        voxel_features = self.pts_voxel_encoder(voxels, num_points, coors,
+                                                )
+        batch_size = coors[-1, 0] + 1
+        x = self.pts_middle_encoder(voxel_features, coors, batch_size)
+        
+        x = self.pts_backbone(x)
+        if self.with_pts_neck:
+            x = self.pts_neck(x)
+        return x
+    
+    @torch.no_grad()
+    def voxelize2(self, points):
+        feats, coords, sizes = [], [], []
+        for k, res in enumerate(points):
+            ret = self.pts_voxel_layer(res)
+            if len(ret) == 3:
+                # hard voxelize
+                f, c, n = ret
+            else:
+                assert len(ret) == 2
+                f, c = ret
+                n = None
+            feats.append(f)
+            coords.append(F.pad(c, (1, 0), mode='constant', value=k))
+            if n is not None:
+                sizes.append(n)
+
+        feats = torch.cat(feats, dim=0)
+        coords = torch.cat(coords, dim=0)
+        if len(sizes) > 0:
+            sizes = torch.cat(sizes, dim=0)
+            if self.voxelize_reduce:
+                feats = feats.sum(
+                    dim=1, keepdim=False) / sizes.type_as(feats).view(-1, 1)
+                feats = feats.contiguous()
+
+        return feats, coords, sizes  
+
+    def extract_pts_feat2(self, points ) -> torch.Tensor:
+        #points = batch_inputs_dict['points']
+        with torch.autocast('cuda', enabled=False):
+            points = [point.float() for point in points]
+            feats, coords, sizes = self.voxelize2(points)
+            batch_size = coords[-1, 0] + 1
+        x = self.pts_middle_encoder(feats, coords, batch_size)
+
+        x = self.pts_backbone(x)
+        if self.with_pts_neck:
+            x = self.pts_neck(x)
+        return x  
+
+    
+
     def extract_feat(self, batch_inputs_dict: dict,
                      batch_input_metas: List[dict]) -> tuple:
         """Extract features from images and points.
@@ -140,10 +193,10 @@ class MFDetector(MVXTwoStageDetector):
              tuple: Two elements in tuple arrange as
              image features and point cloud features.
         """
-        imgs = batch_inputs_dict.get('img', None)
+        imgs = batch_inputs_dict.get('imgs', None)
         points = batch_inputs_dict.get('points', None)
         img_feats = self.extract_img_feat(imgs, batch_input_metas)
-        pts_feats = self.extract_pts_feat(points)
+        pts_feats = self.extract_pts_feat2(points)
         return ( None, pts_feats, img_feats )
 
     def loss(self, batch_inputs_dict: Dict[List, torch.Tensor],
@@ -165,6 +218,7 @@ class MFDetector(MVXTwoStageDetector):
             dict[str, Tensor]: A dictionary of loss components.
 
         """
+        #print( batch_inputs_dict.keys() )
         batch_input_metas = [item.metainfo for item in batch_data_samples]
         points, pts_feats, img_feats = self.extract_feat(batch_inputs_dict,
                                                  batch_input_metas)
@@ -213,4 +267,41 @@ class MFDetector(MVXTwoStageDetector):
         return loss, log_vars  # type: ignore
         
 
-        
+    def predict(self, batch_inputs_dict: Dict[str, Optional[Tensor]],
+                batch_data_samples: List[Det3DDataSample],
+                ) -> List[Det3DDataSample]:
+        """Forward of testing.
+
+        Args:
+            batch_inputs_dict (dict): The model input dict which include
+                'points' keys.
+
+                - points (list[torch.Tensor]): Point cloud of each sample.
+            batch_data_samples (List[:obj:`Det3DDataSample`]): The Data
+                Samples. It usually includes information such as
+                `gt_instance_3d`.
+
+        Returns:
+            list[:obj:`Det3DDataSample`]: Detection results of the
+            input sample. Each Det3DDataSample usually contain
+            'pred_instances_3d'. And the ``pred_instances_3d`` usually
+            contains following keys.
+
+            - scores_3d (Tensor): Classification scores, has a shape
+                (num_instances, )
+            - labels_3d (Tensor): Labels of bboxes, has a shape
+                (num_instances, ).
+            - bbox_3d (:obj:`BaseInstance3DBoxes`): Prediction of bboxes,
+                contains a tensor with shape (num_instances, 7).
+        """
+        batch_input_metas = [item.metainfo for item in batch_data_samples]
+        points, pts_feats, img_feats = self.extract_feat(batch_inputs_dict,
+                                                 batch_input_metas)
+        results = self.pts_bbox_head.predict(
+            points, pts_feats, img_feats, batch_input_metas )
+
+        detsamples = self.add_pred_to_datasample(batch_data_samples,
+                                                 results,
+                                                 None)
+        return detsamples
+       
