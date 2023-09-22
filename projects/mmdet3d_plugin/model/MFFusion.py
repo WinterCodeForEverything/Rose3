@@ -197,7 +197,7 @@ class MFDetector(MVXTwoStageDetector):
         points = batch_inputs_dict.get('points', None)
         img_feats = self.extract_img_feat(imgs, batch_input_metas)
         pts_feats = self.extract_pts_feat2(points)
-        return ( None, pts_feats, img_feats )
+        return ( points, pts_feats, img_feats )
 
     def loss(self, batch_inputs_dict: Dict[List, torch.Tensor],
              batch_data_samples: List[Det3DDataSample],
@@ -218,7 +218,6 @@ class MFDetector(MVXTwoStageDetector):
             dict[str, Tensor]: A dictionary of loss components.
 
         """
-        #print( batch_inputs_dict.keys() )
         batch_input_metas = [item.metainfo for item in batch_data_samples]
         points, pts_feats, img_feats = self.extract_feat(batch_inputs_dict,
                                                  batch_input_metas)
@@ -299,6 +298,9 @@ class MFDetector(MVXTwoStageDetector):
                                                  batch_input_metas)
         results = self.pts_bbox_head.predict(
             points, pts_feats, img_feats, batch_input_metas )
+        
+        #for res in results:
+        #    print( res )
 
         detsamples = self.add_pred_to_datasample(batch_data_samples,
                                                  results,
