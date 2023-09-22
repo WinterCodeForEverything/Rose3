@@ -142,12 +142,12 @@ class MFFusionHead(nn.Module):
             nn.Linear(hidden_channel, hidden_channel)
         )
 
-        # self.depth_num = 64
-        # self.rv_embedding = nn.Sequential(
-        #     nn.Linear(self.depth_num * 3, hidden_channel * 4),
-        #     nn.ReLU(inplace=True),
-        #     nn.Linear( hidden_channel * 4, hidden_channel)
-        # )
+        self.depth_num = 64
+        self.rv_embedding = nn.Sequential(
+            nn.Linear(self.depth_num * 3, hidden_channel * 4),
+            nn.ReLU(inplace=True),
+            nn.Linear( hidden_channel * 4, hidden_channel)
+        )
         self.decoder = MODELS.build(decoder_layer)
 
         # Prediction Head
@@ -224,10 +224,11 @@ class MFFusionHead(nn.Module):
     def _rv_pe(self, img_feats, img_metas):
         B, V, C, H, W = img_feats.shape
         img_feats = img_feats.view( B*V, C, H, W )
-        pad_h, pad_w = 320, 800
-        coords_h = torch.arange(H, device=img_feats[0].device).float() * pad_h / H
-        coords_w = torch.arange(W, device=img_feats[0].device).float() * pad_w / W
-        coords_d = 1 + torch.arange(self.depth_num, device=img_feats[0].device).float() * (self.pc_range[3] - 1) / self.depth_num
+        image_shape = img_metas[0]['pad_shape']
+        pad_h, pad_w = image_shape[0], image_shape[1]
+        coords_h = torch.arange(H, device=img_feats.device).float() * pad_h / H
+        coords_w = torch.arange(W, device=img_feats.device).float() * pad_w / W
+        coords_d = 1 + torch.arange(self.depth_num, device=img_feats.device).float() * (self.pc_range[3] - 1) / self.depth_num
         coords_h, coords_w, coords_d = torch.meshgrid([coords_h, coords_w, coords_d])
 
         coords = torch.stack([coords_w, coords_h, coords_d, coords_h.new_ones(coords_h.shape)], dim=-1)
@@ -410,15 +411,18 @@ class MFFusionHead(nn.Module):
                                     feat_pc.shape[1],
                                     -1)  # [BS, C, H*W]
         bev_pos = self.bev_pos.repeat(batch_size, 1, 1).to(feat_pc_flatten.device)
-        key_embed = feat_pc_flatten.transpose( 1, 2 )
-        key_pos_embed = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
-        if img_feats is not None:
-            B, V, C, H_, W_ = img_feats.shape
-            feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4 ).reshape( B, C, -1 )
-            img_pe = self._rv_pe( img_feats, img_metas ).reshape(B, V*H_*W_, -1)
+        pc_pe = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
+        #key_embed = feat_pc_flatten.transpose( 1, 2 )
+        #key_pos_embed = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
+        #if img_feats is not None:
+        B, V, C, H_, W_ = img_feats.shape
+        #print( img_feats.shape )
+        feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4 ).reshape( B, C, -1 )
+        #print( feat_img_flatten.shape )
+        img_pe = self._rv_pe( img_feats, img_metas ).reshape(B, V*H_*W_, -1)
 
-            key_embed = torch.cat(( key_embed, feat_img_flatten.transpose( 1, 2 ) ), dim= 1 )
-            key_pos_embed = torch.cat(( key_pos_embed, img_pe ), dim= 1 )
+        key_embed = torch.cat(( feat_pc_flatten, feat_img_flatten ), dim= -1 ).transpose( 1, 2 )
+        key_pos_embed = torch.cat(( pc_pe, img_pe ), dim= 1 )
 
 
         #################################
