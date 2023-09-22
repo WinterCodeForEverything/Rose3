@@ -197,7 +197,10 @@ class MFDetector(MVXTwoStageDetector):
         points = batch_inputs_dict.get('points', None)
         img_feats = self.extract_img_feat(imgs, batch_input_metas)
         pts_feats = self.extract_pts_feat2(points)
-        return ( points, pts_feats, img_feats )
+        points_detach = []
+        for point in points:
+            points_detach.append( point.detach() )
+        return ( points_detach, pts_feats, img_feats )
 
     def loss(self, batch_inputs_dict: Dict[List, torch.Tensor],
              batch_data_samples: List[Det3DDataSample],

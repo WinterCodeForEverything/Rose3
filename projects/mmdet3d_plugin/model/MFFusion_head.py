@@ -344,8 +344,8 @@ class MFFusionHead(nn.Module):
         front_points_mask = frontboolmap_flatten.gather( index = idx.long(), dim = -1 )
 
         #print( front_points_mask.shape )
-        front_points = points.clone()[front_points_mask, :3]
-        return front_points
+        front_points = points[front_points_mask]
+        return front_points[:, :3]
     
     @torch.no_grad()    
     def get_img_tokens_reference_points( self, front_points, img_feats, meta ):
@@ -365,7 +365,7 @@ class MFFusionHead(nn.Module):
         proj_points_clone[..., :3] = proj_points[..., :3] / (proj_points[..., 2:3].detach() + z_mask * 1e-6 - (~z_mask) * 1e-6)
         w_idx = torch.div( proj_points_clone[..., 0], 16, rounding_mode='floor').long()
         h_idx = torch.div( proj_points_clone[..., 1], 16, rounding_mode='floor').long()
-        #print( h_idx[0, :20] )
+
         mask = ( w_idx < W ) & ( w_idx >= 0 ) & ( h_idx < H ) & ( h_idx >= 0 )
         mask &= z_mask.squeeze(-1)
         depth = proj_points[..., 2] 
@@ -379,12 +379,7 @@ class MFFusionHead(nn.Module):
         ranks = ranks.gather(index = sort, dim = -1)
         kept = ranks.new_ones(*ranks.shape, dtype=torch.bool)
         kept[:, 1:] = (ranks[:, 1:] != ranks[:, :-1])
-        #print( kept.shape )
-        
-        #print( w_idx.shape )
-        #print( h_idx.shape )
-        #assert w_idx.shape == (V, W+1)
-        #assert h_idx.shape == (V, H+1) 
+
         for i in range(V):
             w_idx_i, h_idx_i = w_idx[i, kept[i]], h_idx[i, kept[i]]
             #print( w_idx_i.shape )
@@ -441,9 +436,11 @@ class MFFusionHead(nn.Module):
         
         B, V, C, H_, W_ = img_feats.shape
         img_tokens_reference_points = img_feats.new_zeros(B, V, H_, W_, 2)
+        front_points_number = []
         for i in range(batch_size):
             frontboolmap_flatten[i, front_idx[i]] = True
-            front_points = self.get_front_points( points[i], frontboolmap_flatten[i] )
+            front_points = self.get_front_points( points[i].clone(), frontboolmap_flatten[i] )
+            front_points_number.append( front_points.shape[0] )
             img_tokens_reference_points[i] = self.get_img_tokens_reference_points( 
                 front_points, img_feats[i], img_metas[i] )
             
@@ -549,6 +546,7 @@ class MFFusionHead(nn.Module):
         ret_dict['dense_heatmap'] = dense_heatmap
         ret_dict['frontmap'] = front_map_score
         ret_dict['frontboolmap'] = frontboolmap
+        ret_dict['front_points_number'] = front_points_number
 
         return [ret_dict]
         
