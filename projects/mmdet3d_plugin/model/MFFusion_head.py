@@ -353,12 +353,12 @@ class MFFusionHead(nn.Module):
         V, C, H, W = img_feats.shape
         reference_points = img_feats.new_zeros( V, H, W, 2 )
 
-        lidar_aug_matrix = torch.from_numpy(meta['lidar_aug_matrix']).float().to(front_points.device)
+        #lidar_aug_matrix = torch.from_numpy(meta['lidar_aug_matrix']).float().to(front_points.device)
         lidars2imgs = torch.from_numpy(meta['lidar2img']).float().to(front_points.device)
-        img_aug_matrix = torch.from_numpy(meta['img_aug_matrix']).float().to(front_points.device)
-        lidars2imgs_aug = torch.linalg.inv(lidar_aug_matrix) @ lidars2imgs @ img_aug_matrix
+        #img_aug_matrix = torch.from_numpy(meta['img_aug_matrix']).float().to(front_points.device)
+        #lidars2imgs_aug = torch.linalg.inv(lidar_aug_matrix) @ lidars2imgs @ img_aug_matrix
 
-        proj_points = torch.einsum('nd, vcd -> vnc', torch.cat([front_points, front_points.new_ones(*front_points.shape[:-1], 1)], dim=-1), lidars2imgs_aug)
+        proj_points = torch.einsum('nd, vcd -> vnc', torch.cat([front_points, front_points.new_ones(*front_points.shape[:-1], 1)], dim=-1), lidars2imgs)
         #print( proj_points.shape )
         proj_points_clone = proj_points.clone()
         z_mask = (proj_points[..., 2:3].detach() > 0) & ( proj_points[..., 2:3].detach() < 1000.0 )
