@@ -1,0 +1,8 @@
+# ninja log v5
+1	9447	1695259785204679031	/home/users/sutd/1008377/Rose3/build/temp.linux-x86_64-3.8/projects/mmdet3d_plugin/model/ops2/bev_pool/src/bev_pool_cuda.o	edf6d8d9182ea916
+1	28268	1695259804009267730	/home/users/sutd/1008377/Rose3/build/temp.linux-x86_64-3.8/projects/mmdet3d_plugin/model/ops2/bev_pool/src/bev_pool.o	80e032dfcd608b0c
+7	15086	1695259819821378370	/home/users/sutd/1008377/Rose3/build/temp.linux-x86_64-3.8/projects/mmdet3d_plugin/model/ops2/voxel/src/voxelization_cpu.o	6e4a62d56edc97b
+6	15109	1695259819844700478	/home/users/sutd/1008377/Rose3/build/temp.linux-x86_64-3.8/projects/mmdet3d_plugin/model/ops2/voxel/src/scatter_points_cpu.o	54a8c6aa1a65ad24
+7	18634	1695259823366337990	/home/users/sutd/1008377/Rose3/build/temp.linux-x86_64-3.8/projects/mmdet3d_plugin/model/ops2/voxel/src/voxelization.o	f673833539f1c6f0
+7	53057	1695259857797273899	/home/users/sutd/1008377/Rose3/build/temp.linux-x86_64-3.8/projects/mmdet3d_plugin/model/ops2/voxel/src/scatter_points_cuda.o	f9b785a563e0378
+7	53854	1695259858593648348	/home/users/sutd/1008377/Rose3/build/temp.linux-x86_64-3.8/projects/mmdet3d_plugin/model/ops2/voxel/src/voxelization_cuda.o	b1799b8ab49c419

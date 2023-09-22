@@ -1,1 +1,4 @@
-#projects/configs
+projects/configs
+*.pyc
+*.sh
+*.log

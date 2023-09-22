@@ -9,6 +9,7 @@ from .vovnetcp import VoVNetCP
 from .cp_fpn import CPFPN
 from .grid_mask import GridMask
 from .loading import BEVLoadMultiViewImageFromFiles
+from .sparse_encoder import BEVFusionSparseEncoder
 
 
 __all__ = [
@@ -16,8 +17,8 @@ __all__ = [
     'BBoxBEVL1Cost', 'IoU3DCost', 'HeuristicAssigner3D', 'TransformerDecoderLayer',
     'BEVFusionGlobalRotScaleTrans', 'BEVFusionRandomFlip3D', 'CPFPN',
     'VoVNetCP', 'GridMask', 'ImageAug3D', 'MFFusionRandomFlip3D', 
-    'MFFusionGlobalRotScaleTrans', 'BEVLoadMultiViewImageFromFiles'
+    'MFFusionGlobalRotScaleTrans', 'BEVLoadMultiViewImageFromFiles',
+    'BEVFusionSparseEncoder'
 ]
-
 
 

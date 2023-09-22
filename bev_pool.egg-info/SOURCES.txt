@@ -1,0 +1,12 @@
+bev_pool.egg-info/PKG-INFO
+bev_pool.egg-info/SOURCES.txt
+bev_pool.egg-info/dependency_links.txt
+bev_pool.egg-info/not-zip-safe
+bev_pool.egg-info/top_level.txt
+projects/mmdet3d_plugin/model/ops2/bev_pool/src/bev_pool.cpp
+projects/mmdet3d_plugin/model/ops2/bev_pool/src/bev_pool_cuda.cu
+projects/mmdet3d_plugin/model/ops2/voxel/src/scatter_points_cpu.cpp
+projects/mmdet3d_plugin/model/ops2/voxel/src/scatter_points_cuda.cu
+projects/mmdet3d_plugin/model/ops2/voxel/src/voxelization.cpp
+projects/mmdet3d_plugin/model/ops2/voxel/src/voxelization_cpu.cpp
+projects/mmdet3d_plugin/model/ops2/voxel/src/voxelization_cuda.cu

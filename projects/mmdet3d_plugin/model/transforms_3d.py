@@ -142,7 +142,7 @@ class MFFusionRandomFlip3D:
              data['lidar_aug_matrix'] = np.eye(4)
         data['lidar_aug_matrix'][:3, :] = rotation @ data[
              'lidar_aug_matrix'][:3, :]
-        data['lidar2img'] = np.matmul( data['lidar2img'], data['lidar_aug_matrix'] )
+        data['lidar2img'] = data['lidar2img'] @ data['lidar_aug_matrix']
         return data
 
 
@@ -185,8 +185,7 @@ class MFFusionGlobalRotScaleTrans(GlobalRotScaleTrans):
             input_dict['lidar_aug_matrix'] = np.eye(4)
         input_dict[
             'lidar_aug_matrix'] = lidar_augs @ input_dict['lidar_aug_matrix']
-        input_dict['lidar2img'] = np.matmul( input_dict['lidar2img'],
-                                             input_dict['lidar_aug_matrix'] )
+        input_dict['lidar2img'] = input_dict['lidar2img'] @ input_dict['lidar_aug_matrix']
         return input_dict
 
 
