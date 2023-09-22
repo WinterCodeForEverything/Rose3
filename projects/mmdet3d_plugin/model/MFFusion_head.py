@@ -337,6 +337,7 @@ class MFFusionHead(nn.Module):
             ( points.new_tensor(self.pc_range[3:]) - points.new_tensor(self.pc_range[:3]) )
         #x_size = torch.div(cfg['grid_size'][0], cfg['out_size_factor'], rounding_mode='floor')
         #y_size = torch.div(cfg['grid_size'][1], cfg['out_size_factor'], rounding_mode='floor')
+        assert torch.all( points_normal >= 0.0 ) and torch.all( points_normal <= 1.0 )
         bev_size = torch.div(points.new_tensor(cfg['grid_size'][:2]), cfg['out_size_factor'], rounding_mode='floor')
         
         bev_idx = ( points_normal[:, :2]*bev_size[None, :] ).long()
@@ -344,6 +345,7 @@ class MFFusionHead(nn.Module):
         front_points_mask = frontboolmap_flatten.gather( index = idx.long(), dim = -1 )
 
         #print( front_points_mask.shape )
+        assert front_points_mask.shape[0] == points.shape[0]
         front_points = points[front_points_mask]
         return front_points[:, :3]
     
@@ -439,10 +441,10 @@ class MFFusionHead(nn.Module):
         front_points_number = []
         for i in range(batch_size):
             frontboolmap_flatten[i, front_idx[i]] = True
-            front_points = self.get_front_points( points[i].clone(), frontboolmap_flatten[i] )
-            front_points_number.append( front_points.shape[0] )
+            #front_points = self.get_front_points( points[i].clone(), frontboolmap_flatten[i] )
+            front_points_number.append( points[i].shape[0] )
             img_tokens_reference_points[i] = self.get_img_tokens_reference_points( 
-                front_points, img_feats[i], img_metas[i] )
+                points[i][:, :3], img_feats[i], img_metas[i] )
             
         
         feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4).reshape( B, C, -1 )
