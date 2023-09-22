@@ -142,12 +142,12 @@ class MFFusionHead(nn.Module):
             nn.Linear(hidden_channel, hidden_channel)
         )
 
-        self.depth_num = 64
-        self.rv_embedding = nn.Sequential(
-            nn.Linear(self.depth_num * 3, hidden_channel * 4),
-            nn.ReLU(inplace=True),
-            nn.Linear( hidden_channel * 4, hidden_channel)
-        )
+        # self.depth_num = 64
+        # self.rv_embedding = nn.Sequential(
+        #     nn.Linear(self.depth_num * 3, hidden_channel * 4),
+        #     nn.ReLU(inplace=True),
+        #     nn.Linear( hidden_channel * 4, hidden_channel)
+        # )
         self.decoder = MODELS.build(decoder_layer)
 
         # Prediction Head
@@ -403,6 +403,7 @@ class MFFusionHead(nn.Module):
         feat_pc = self.shared_conv(pts_feats)
         #print( pts_feats.shape )
         #print( img_feats.shape )
+        #print( points.shape )
 
         #################################
         # image to BEV
@@ -415,14 +416,14 @@ class MFFusionHead(nn.Module):
         #key_embed = feat_pc_flatten.transpose( 1, 2 )
         #key_pos_embed = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
         #if img_feats is not None:
-        B, V, C, H_, W_ = img_feats.shape
+        #B, V, C, H_, W_ = img_feats.shape
         #print( img_feats.shape )
-        feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4 ).reshape( B, C, -1 )
+        #feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4 ).reshape( B, C, -1 )
         #print( feat_img_flatten.shape )
-        img_pe = self._rv_pe( img_feats, img_metas ).reshape(B, V*H_*W_, -1)
+        #img_pe = self._rv_pe( img_feats, img_metas ).reshape(B, V*H_*W_, -1)
 
-        key_embed = torch.cat(( feat_pc_flatten, feat_img_flatten ), dim= -1 ).transpose( 1, 2 )
-        key_pos_embed = torch.cat(( pc_pe, img_pe ), dim= 1 )
+        #key_embed = torch.cat(( feat_pc_flatten, feat_img_flatten ), dim= -1 ).transpose( 1, 2 )
+        #key_pos_embed = torch.cat(( pc_pe, img_pe ), dim= 1 )
 
 
         #################################
@@ -438,20 +439,20 @@ class MFFusionHead(nn.Module):
         frontboolmap_flatten= frontmap_flatten.new_zeros(*frontmap_flatten.shape, dtype=torch.bool)
 
         
-        # B, V, C, H_, W_ = img_feats.shape
-        # img_tokens_reference_points = img_feats.new_zeros(B, V, H_, W_, 2)
+        B, V, C, H_, W_ = img_feats.shape
+        img_tokens_reference_points = img_feats.new_zeros(B, V, H_, W_, 2)
         for i in range(batch_size):
             frontboolmap_flatten[i, front_idx[i]] = True
-        #     front_points = self.get_front_points( points[i], frontboolmap_flatten[i] )
-        #     img_tokens_reference_points[i] = self.get_img_tokens_reference_points( 
-        #         front_points, img_feats[i], img_metas[i] )
+            front_points = self.get_front_points( points[i], frontboolmap_flatten[i] )
+            img_tokens_reference_points[i] = self.get_img_tokens_reference_points( 
+                front_points, img_feats[i], img_metas[i] )
             
         
-        # feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4).reshape( B, C, -1 )
-        # img_tokens_reference_points = img_tokens_reference_points.view( B, V*H_*W_, -1)
-        #key_embed = torch.cat( (feat_pc_flatten, feat_img_flatten), dim=-1 ).transpose( 1, 2 )
-        #reference_points = torch.cat((bev_pos, img_tokens_reference_points), dim = 1 )
-        #key_pos_embed = self.bev_embedding(self.pos2embed( reference_points, num_pos_feats = self.pos_embed_channel ))
+        feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4).reshape( B, C, -1 )
+        img_tokens_reference_points = img_tokens_reference_points.view( B, V*H_*W_, -1)
+        key_embed = torch.cat( (feat_pc_flatten, feat_img_flatten), dim=-1 ).transpose( 1, 2 )
+        reference_points = torch.cat((bev_pos, img_tokens_reference_points), dim = 1 )
+        key_pos_embed = self.bev_embedding(self.pos2embed( reference_points, num_pos_feats = self.pos_embed_channel ))
 
         frontboolmap = frontboolmap_flatten.view(batch_size, H, W)
 #
@@ -562,13 +563,13 @@ class MFFusionHead(nn.Module):
             tuple(list[dict]): Output results. first index by level, second
             index by layer
         """
-        if isinstance(points, torch.Tensor):
-            points = [points]
+        #if isinstance(points, torch.Tensor):
+        #    points = [points]
         if isinstance(pts_feats, torch.Tensor):
             pts_feats = [pts_feats]
         if isinstance(img_feats, torch.Tensor):
             img_feats = [img_feats]
-        res = multi_apply(self.forward_single, points, pts_feats, img_feats, [metas])
+        res = multi_apply(self.forward_single, [points], pts_feats, img_feats, [metas])
         assert len(res) == 1, 'only support one level features.'
         return res
     

@@ -2,3 +2,4 @@ projects/configs
 *.pyc
 *.sh
 *.log
+rose.*
