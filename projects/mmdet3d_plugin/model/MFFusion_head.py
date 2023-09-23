@@ -339,9 +339,11 @@ class MFFusionHead(nn.Module):
         #y_size = torch.div(cfg['grid_size'][1], cfg['out_size_factor'], rounding_mode='floor')
         assert torch.all( points_normal >= 0.0 ) and torch.all( points_normal < 1.0 )
         bev_size = torch.div(points.new_tensor(cfg['grid_size'][:2]), cfg['out_size_factor'], rounding_mode='floor')
-        
+
         bev_idx = torch.floor( points_normal[:, :2]*bev_size ).long()
         idx = bev_idx[:, 1] * bev_size[0] + bev_idx[:, 0]
+        assert torch.all( idx < bev_size[0]*bev_size[1] )
+        assert frontboolmap_flatten.shape[0] == bev_size[0]*bev_size[1]
         front_points_mask = frontboolmap_flatten.gather( index = idx.long(), dim = -1 )
 
         #print( front_points_mask.shape )
@@ -439,13 +441,13 @@ class MFFusionHead(nn.Module):
         
         B, V, C, H_, W_ = img_feats.shape
         img_tokens_reference_points = img_feats.new_zeros(B, V, H_, W_, 2)
-        front_points_number = []
+        #front_points_number = []
         for i in range(batch_size):
             frontboolmap_flatten[i, front_idx[i]] = True
-            #front_points = self.get_front_points( points[i].clone(), frontboolmap_flatten[i] )
-            front_points_number.append( points[i].shape[0] )
+            front_points = self.get_front_points( points[i].clone(), frontboolmap_flatten[i] )
+            #front_points_number.append( points[i].shape[0] )
             img_tokens_reference_points[i] = self.get_img_tokens_reference_points( 
-                points[i][:, :3], img_feats[i], img_metas[i] )
+                front_points, img_feats[i], img_metas[i] )
             
         
         feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4).reshape( B, C, -1 )
@@ -549,7 +551,7 @@ class MFFusionHead(nn.Module):
         ret_dict['dense_heatmap'] = dense_heatmap
         ret_dict['frontmap'] = front_map_score
         ret_dict['frontboolmap'] = frontboolmap
-        ret_dict['front_points_number'] = front_points_number
+        #ret_dict['front_points_number'] = front_points_number
 
         return [ret_dict]
         
@@ -656,7 +658,7 @@ class MFFusionHead(nn.Module):
         # 1. Assignment
         gt_bboxes_3d = gt_instances_3d.bboxes_3d
         gt_labels_3d = gt_instances_3d.labels_3d
-        num_proposals = preds_dict['center'].shape[-1]
+        #num_proposals = preds_dict['center'].shape[-1]
 
         # get pred boxes, carefully ! don't change the network outputs
         score = copy.deepcopy(preds_dict['heatmap'].detach())
@@ -682,6 +684,7 @@ class MFFusionHead(nn.Module):
         #gt_labels_3d = gt_labels_3d[isnotnan]
         score = score[..., isnotnan]
         #print( bboxes_tensor.shape )
+        num_proposals = bboxes_tensor.shape[0]
 
 
         assign_result = None
