@@ -81,8 +81,8 @@ class ImageAug3D(BaseTransform):
     def transform(self, data: Dict[str, Any]) -> Dict[str, Any]:
         imgs = data['img']
         new_imgs = []
-        transforms = []
-        for img in imgs:
+        #transforms = []
+        for i, img in enumerate(imgs):
             resize, resize_dims, crop, flip, rotate = self.sample_augmentation(
                 data)
             post_rot = torch.eye(2)
@@ -100,12 +100,13 @@ class ImageAug3D(BaseTransform):
             transform = torch.eye(4)
             transform[:2, :2] = rotation
             transform[:2, 3] = translation
+            data['lidar2img'][i] = transform @ data['lidar2img'][i]
             new_imgs.append(np.array(new_img).astype(np.float32))
-            transforms.append(transform.numpy())
+            #transforms.append(transform.numpy())
         data['img'] = new_imgs
         # update the calibration matrices
-        data['img_aug_matrix'] = transforms
-        data['lidar2img'] = data['img_aug_matrix'] @ data['lidar2img']
+        #data['img_aug_matrix'] = transforms
+        
         return data
 
 
@@ -138,11 +139,14 @@ class MFFusionRandomFlip3D:
             if 'gt_masks_bev' in data:
                 data['gt_masks_bev'] = data['gt_masks_bev'][:, ::-1, :].copy()
 
-        if 'lidar_aug_matrix' not in data:
-             data['lidar_aug_matrix'] = np.eye(4)
-        data['lidar_aug_matrix'][:3, :] = rotation @ data[
-             'lidar_aug_matrix'][:3, :]
-        data['lidar2img'] = data['lidar2img'] @ data['lidar_aug_matrix']
+        #if 'lidar_aug_matrix' not in data:
+        #     data['lidar_aug_matrix'] = np.eye(4)
+        #data['lidar_aug_matrix'][:3, :] = rotation @ data[
+        #     'lidar_aug_matrix'][:3, :]
+        transform = np.eye(4)
+        transform[:3, :3] = rotation
+        for i, lidar2img in enumerate(data['lidar2img']):
+            data['lidar2img'][i] = lidar2img @ transform
         return data
 
 
@@ -181,11 +185,12 @@ class MFFusionGlobalRotScaleTrans(GlobalRotScaleTrans):
         lidar_augs[:3, 3] = input_dict['pcd_trans'] * \
             input_dict['pcd_scale_factor']
 
-        if 'lidar_aug_matrix' not in input_dict:
-            input_dict['lidar_aug_matrix'] = np.eye(4)
-        input_dict[
-            'lidar_aug_matrix'] = lidar_augs @ input_dict['lidar_aug_matrix']
-        input_dict['lidar2img'] = input_dict['lidar2img'] @ input_dict['lidar_aug_matrix']
+        # if 'lidar_aug_matrix' not in input_dict:
+        #     input_dict['lidar_aug_matrix'] = np.eye(4)
+        # input_dict[
+        #     'lidar_aug_matrix'] = lidar_augs @ input_dict['lidar_aug_matrix']
+        for i, lidar2img in enumerate(input_dict['lidar2img']):
+            input_dict['lidar2img'][i] = lidar2img @ np.linalg.inv( lidar_augs )
         return input_dict
 
 
