@@ -331,11 +331,13 @@ class MFFusionHead(nn.Module):
     def get_front_points( self, points, frontboolmap_flatten ):
         cfg = self.train_cfg if self.train_cfg else self.test_cfg
         points_normal = ( points[:, :3] - points.new_tensor(self.pc_range[:3]) ) /  \
-            ( points.new_tensor(self.pc_range[3:]) - points.new_tensor(self.pc_range[:3]) )
-        assert torch.all( points_normal >= 0.0 ) and torch.all( points_normal <= 1.0 )
+            ( points.new_tensor(self.pc_range[3:]) - points.new_tensor(self.pc_range[:3]) + \
+             points.new_tensor([1e-6, 1e-6, 1e-6]))
+        assert torch.all( points_normal >= 0.0 ) and torch.all( points_normal < 1.0 )
         bev_size = torch.div(points.new_tensor(cfg['grid_size'][:2]), cfg['out_size_factor'], rounding_mode='floor')
 
         bev_idx = torch.floor( points_normal[:, :2]*bev_size ).long()
+        #assert torch.all(bev_idx[0] < bev_size[0]) and torch.all(bev_idx[1] < bev_size[1] )
         idx = bev_idx[:, 1] * bev_size[0] + bev_idx[:, 0]
         front_points_mask = frontboolmap_flatten.gather( index = idx.long(), dim = -1 )
 
