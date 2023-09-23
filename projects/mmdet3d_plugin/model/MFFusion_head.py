@@ -337,16 +337,17 @@ class MFFusionHead(nn.Module):
             ( points.new_tensor(self.pc_range[3:]) - points.new_tensor(self.pc_range[:3]) )
         #x_size = torch.div(cfg['grid_size'][0], cfg['out_size_factor'], rounding_mode='floor')
         #y_size = torch.div(cfg['grid_size'][1], cfg['out_size_factor'], rounding_mode='floor')
-        assert torch.all( points_normal >= 0.0 ) and torch.all( points_normal <= 1.0 )
+        assert torch.all( points_normal >= 0.0 ) and torch.all( points_normal < 1.0 )
         bev_size = torch.div(points.new_tensor(cfg['grid_size'][:2]), cfg['out_size_factor'], rounding_mode='floor')
         
-        bev_idx = ( points_normal[:, :2]*bev_size[None, :] ).long()
+        bev_idx = torch.floor( points_normal[:, :2]*bev_size ).long()
         idx = bev_idx[:, 1] * bev_size[0] + bev_idx[:, 0]
         front_points_mask = frontboolmap_flatten.gather( index = idx.long(), dim = -1 )
 
         #print( front_points_mask.shape )
         assert front_points_mask.shape[0] == points.shape[0]
         front_points = points[front_points_mask]
+        assert front_points is not None and front_points.shape[0] > 0
         return front_points[:, :3]
     
     @torch.no_grad()    
@@ -673,6 +674,14 @@ class MFFusionHead(nn.Module):
             vel)  # decode the prediction to real world metric bbox
         bboxes_tensor = boxes_dict[0]['bboxes']
         gt_bboxes_tensor = gt_bboxes_3d.tensor.to(score.device)
+        
+        #assert torch.all(~torch.isnan(bboxes_tensor))
+        isnotnan = torch.isfinite(bboxes_tensor).all(dim=-1)
+        bboxes_tensor = bboxes_tensor[isnotnan]
+        #gt_bboxes_tensor = gt_bboxes_tensor[isnotnan]
+        #gt_labels_3d = gt_labels_3d[isnotnan]
+        score = score[..., isnotnan]
+        #print( bboxes_tensor.shape )
 
 
         assign_result = None
