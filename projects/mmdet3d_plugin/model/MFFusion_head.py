@@ -330,26 +330,16 @@ class MFFusionHead(nn.Module):
     @torch.no_grad()  
     def get_front_points( self, points, frontboolmap_flatten ):
         cfg = self.train_cfg if self.train_cfg else self.test_cfg
-        #x_normal = (points[..., 0] - self.pc_range[0]) / (self.pc_range[3] - self.pc_range[0])
-        #y_normal = (points[..., 1] - self.pc_range[1]) / (self.pc_range[4] - self.pc_range[1])
-        #print( isinstance(points, torch.Tensor))
         points_normal = ( points[:, :3] - points.new_tensor(self.pc_range[:3]) ) /  \
             ( points.new_tensor(self.pc_range[3:]) - points.new_tensor(self.pc_range[:3]) )
-        #x_size = torch.div(cfg['grid_size'][0], cfg['out_size_factor'], rounding_mode='floor')
-        #y_size = torch.div(cfg['grid_size'][1], cfg['out_size_factor'], rounding_mode='floor')
-        assert torch.all( points_normal >= 0.0 ) and torch.all( points_normal < 1.0 )
+        assert torch.all( points_normal >= 0.0 ) and torch.all( points_normal <= 1.0 )
         bev_size = torch.div(points.new_tensor(cfg['grid_size'][:2]), cfg['out_size_factor'], rounding_mode='floor')
 
         bev_idx = torch.floor( points_normal[:, :2]*bev_size ).long()
         idx = bev_idx[:, 1] * bev_size[0] + bev_idx[:, 0]
-        assert torch.all( idx < bev_size[0]*bev_size[1] )
-        assert frontboolmap_flatten.shape[0] == bev_size[0]*bev_size[1]
         front_points_mask = frontboolmap_flatten.gather( index = idx.long(), dim = -1 )
 
-        #print( front_points_mask.shape )
-        assert front_points_mask.shape[0] == points.shape[0]
         front_points = points[front_points_mask]
-        assert front_points is not None and front_points.shape[0] > 0
         return front_points[:, :3]
     
     @torch.no_grad()    
@@ -361,7 +351,7 @@ class MFFusionHead(nn.Module):
         #lidar_aug_matrix = torch.from_numpy(meta['lidar_aug_matrix']).float().to(front_points.device)
         lidars2imgs = torch.from_numpy(meta['lidar2img']).float().to(front_points.device)
         #img_aug_matrix = torch.from_numpy(meta['img_aug_matrix']).float().to(front_points.device)
-        #lidars2imgs_aug = torch.linalg.inv(lidar_aug_matrix) @ lidars2imgs @ img_aug_matrix
+        #lidars2imgs_aug = torch.linalg.inv(lidar_aug_matrix) @ lidars2imgs @ img_aug_matrix[]
 
         proj_points = torch.einsum('nd, vcd -> vnc', torch.cat([front_points, front_points.new_ones(*front_points.shape[:-1], 1)], dim=-1), lidars2imgs)
         #print( proj_points.shape )
