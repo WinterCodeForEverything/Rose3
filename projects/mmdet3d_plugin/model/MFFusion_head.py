@@ -159,7 +159,7 @@ class MFFusionHead(nn.Module):
                                              bias=bias,
             )
         
-        self.init_weights()
+        #self.init_weights()
         self._init_assigner_sampler()
 
         self.bev_pos = self.coords_bev()
@@ -330,17 +330,18 @@ class MFFusionHead(nn.Module):
     @torch.no_grad()  
     def get_front_points( self, points, frontboolmap_flatten ):
         cfg = self.train_cfg if self.train_cfg else self.test_cfg
-        points_normal = ( points[:, :3] - points.new_tensor(self.pc_range[:3]) ) /  \
-            ( points.new_tensor(self.pc_range[3:]) - points.new_tensor(self.pc_range[:3]) + \
-             points.new_tensor([1e-6, 1e-6, 1e-6]))
-        assert torch.all( points_normal >= 0.0 ) and torch.all( points_normal < 1.0 )
         bev_size = torch.div(points.new_tensor(cfg['grid_size'][:2]), cfg['out_size_factor'], rounding_mode='floor')
 
-        bev_idx = torch.floor( points_normal[:, :2]*bev_size ).long()
-        #assert torch.all(bev_idx[0] < bev_size[0]) and torch.all(bev_idx[1] < bev_size[1] )
+        bev_idx = torch.div((points[:, :2]-points.new_tensor(self.pc_range[:2]))*bev_size, 
+            points.new_tensor(self.pc_range[3:5]) - points.new_tensor(self.pc_range[:2]),
+              rounding_mode='floor')
+        
         idx = bev_idx[:, 1] * bev_size[0] + bev_idx[:, 0]
-        front_points_mask = frontboolmap_flatten.gather( index = idx.long(), dim = -1 )
+        mask = (idx >= 0) & ( idx < frontboolmap_flatten.shape[0] )
 
+        front_points_mask = frontboolmap_flatten.gather( index = idx[mask].long(), dim = -1 )
+
+        points = points[mask]
         front_points = points[front_points_mask]
         return front_points[:, :3]
     
@@ -476,10 +477,10 @@ class MFFusionHead(nn.Module):
                   padding:(-padding)] = local_max_inner
         # for Pedestrian & Traffic_cone in nuScenes
         if self.train_cfg['dataset'] == 'nuScenes':
-            local_max[:, 8, ] = F.max_pool2d(
-                heatmap[:, 8], kernel_size=1, stride=1, padding=0)
-            local_max[:, 9, ] = F.max_pool2d(
-                heatmap[:, 9], kernel_size=1, stride=1, padding=0)
+            local_max[:, 5, ] = F.max_pool2d(
+                heatmap[:, 5], kernel_size=1, stride=1, padding=0)
+            local_max[:, 6, ] = F.max_pool2d(
+                heatmap[:, 6], kernel_size=1, stride=1, padding=0)
         elif self.train_cfg[
                 'dataset'] == 'Waymo':  # for Pedestrian & Cyclist in Waymo
             local_max[:, 1, ] = F.max_pool2d(
@@ -650,7 +651,8 @@ class MFFusionHead(nn.Module):
         # 1. Assignment
         gt_bboxes_3d = gt_instances_3d.bboxes_3d
         gt_labels_3d = gt_instances_3d.labels_3d
-        #num_proposals = preds_dict['center'].shape[-1]
+        num_proposals = preds_dict['center'].shape[-1]
+        #print( gt_labels_3d.shape )
 
         # get pred boxes, carefully ! don't change the network outputs
         score = copy.deepcopy(preds_dict['heatmap'].detach())
@@ -669,14 +671,10 @@ class MFFusionHead(nn.Module):
         bboxes_tensor = boxes_dict[0]['bboxes']
         gt_bboxes_tensor = gt_bboxes_3d.tensor.to(score.device)
         
-        #assert torch.all(~torch.isnan(bboxes_tensor))
-        isnotnan = torch.isfinite(bboxes_tensor).all(dim=-1)
-        bboxes_tensor = bboxes_tensor[isnotnan]
-        #gt_bboxes_tensor = gt_bboxes_tensor[isnotnan]
-        #gt_labels_3d = gt_labels_3d[isnotnan]
-        score = score[..., isnotnan]
-        #print( bboxes_tensor.shape )
-        num_proposals = bboxes_tensor.shape[0]
+        #isnotnan = torch.isfinite(bboxes_tensor).all(dim=-1)
+        #bboxes_tensor = bboxes_tensor[isnotnan]
+        #score = score[..., isnotnan]
+        #num_proposals = bboxes_tensor.shape[0]
 
 
         assign_result = None
