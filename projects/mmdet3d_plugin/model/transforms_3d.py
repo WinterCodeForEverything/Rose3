@@ -99,7 +99,7 @@ class ImageAug3D(BaseTransform):
             )
             transform = torch.eye(4)
             transform[:2, :2] = rotation
-            transform[:2, 3] = translation
+            transform[:2, 2] = translation
             data['lidar2img'][i] = transform @ data['lidar2img'][i]
             new_imgs.append(np.array(new_img).astype(np.float32))
             #transforms.append(transform.numpy())
@@ -153,7 +153,7 @@ class MFFusionRandomFlip3D:
 @TRANSFORMS.register_module()
 class MFFusionGlobalRotScaleTrans(GlobalRotScaleTrans):
     """Compared with `GlobalRotScaleTrans`, the augmentation order in this
-    class is rotation, translation and scaling (RTS)."""
+    class is scaling, rotation and translation(SRT)."""
 
     def transform(self, input_dict: dict) -> dict:
         """Private function to rotate, scale and translate bounding boxes and
@@ -170,20 +170,20 @@ class MFFusionGlobalRotScaleTrans(GlobalRotScaleTrans):
         if 'transformation_3d_flow' not in input_dict:
             input_dict['transformation_3d_flow'] = []
 
-        self._rot_bbox_points(input_dict)
-
+        
         if 'pcd_scale_factor' not in input_dict:
             self._random_scale(input_dict)
-        self._trans_bbox_points(input_dict)
         self._scale_bbox_points(input_dict)
+
+        self._rot_bbox_points(input_dict)
+        self._trans_bbox_points(input_dict)
         
-        input_dict['transformation_3d_flow'].extend(['R', 'T', 'S'])
+        input_dict['transformation_3d_flow'].extend(['S', 'R', 'T'])
 
         lidar_augs = np.eye(4)
-        lidar_augs[:3, :3] = input_dict['pcd_rotation'].T * input_dict[
-            'pcd_scale_factor']
-        lidar_augs[:3, 3] = input_dict['pcd_trans'] * \
-            input_dict['pcd_scale_factor']
+        lidar_augs[:3, :3] *= input_dict['pcd_scale_factor']
+        lidar_augs[:3, :3] *= input_dict['pcd_rotation']
+        lidar_augs[:3, 3] = input_dict['pcd_trans']
 
         if 'lidar_aug_matrix' not in input_dict:
             input_dict['lidar_aug_matrix'] = np.eye(4)
