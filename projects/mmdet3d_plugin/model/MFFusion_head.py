@@ -641,7 +641,7 @@ class MFFusionHead(nn.Module):
         gt_bboxes_tensor = gt_bboxes_3d.tensor.to(score.device)
         
         isnotnan = torch.isfinite(bboxes_tensor).all(dim=-1)
-        print( "invalid bbox number: {}.".format(num_proposals - isnotnan2.sum()) )
+        print( "invalid bbox number: {}.".format(num_proposals - isnotnan.sum()) )
         #bboxes_tensor = bboxes_tensor[isnotnan]
         #score = score[..., isnotnan]
         isnotnan2 = torch.isfinite(score).all(dim=1)
