@@ -357,7 +357,6 @@ class MFFusionHead(nn.Module):
         #lidars2imgs_aug = torch.linalg.inv(lidar_aug_matrix) @ lidars2imgs @ img_aug_matrix[]
 
         proj_points = torch.einsum('nd, vcd -> vnc', torch.cat([front_points, front_points.new_ones(*front_points.shape[:-1], 1)], dim=-1), lidars2imgs)
-        #print( proj_points.shape )
         proj_points_clone = proj_points.clone()
         z_mask = (proj_points[..., 2:3].detach() > 0) & ( proj_points[..., 2:3].detach() < 1000.0 )
         proj_points_clone[..., :3] = proj_points[..., :3] / (proj_points[..., 2:3].detach() + z_mask * 1e-6 - (~z_mask) * 1e-6)
@@ -368,7 +367,6 @@ class MFFusionHead(nn.Module):
         mask &= z_mask.squeeze(-1)
         depth = proj_points[..., 2] 
         w_idx[~mask], h_idx[~mask], depth[~mask] = W, H, 1000.0
-        #print( w_idx.shape )
         ranks = h_idx*W + w_idx
         sort = ( ranks + depth/1001. ).argsort(dim = -1)
         w_idx = w_idx.gather(index = sort, dim = -1)
@@ -380,13 +378,9 @@ class MFFusionHead(nn.Module):
 
         for i in range(V):
             w_idx_i, h_idx_i = w_idx[i, kept[i]], h_idx[i, kept[i]]
-            #print( w_idx_i.shape )
-            #print(w_idx_i.device)
             front_points_i = front_points[kept[i]]
-            #print( front_points_i.shape )
             reference_points[ i, h_idx_i[:-1], w_idx_i[:-1]] = front_points_i[:-1, :2]
         
-        #reference_points = reference_points.view( V, W, H, 3).permute( 0, 3, 1, 2 )
         return reference_points
 
     def forward_single(self, points, pts_feats, img_feats, img_metas):
@@ -394,9 +388,6 @@ class MFFusionHead(nn.Module):
         batch_size, _, H, W = pts_feats.shape
         valid_token_nums = H*W
         feat_pc = self.shared_conv(pts_feats)
-        #print( pts_feats.shape )
-        #print( img_feats.shape )
-        #print( points.shape )
 
         #################################
         # image to BEV
@@ -405,18 +396,7 @@ class MFFusionHead(nn.Module):
                                     feat_pc.shape[1],
                                     -1)  # [BS, C, H*W]
         bev_pos = self.bev_pos.repeat(batch_size, 1, 1).to(feat_pc_flatten.device)
-        pc_pe = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
-        #key_embed = feat_pc_flatten.transpose( 1, 2 )
-        #key_pos_embed = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
-        #if img_feats is not None:
-        #B, V, C, H_, W_ = img_feats.shape
-        #print( img_feats.shape )
-        #feat_img_flatten = img_feats.permute( 0, 2, 1, 3, 4 ).reshape( B, C, -1 )
-        #print( feat_img_flatten.shape )
-        #img_pe = self._rv_pe( img_feats, img_metas ).reshape(B, V*H_*W_, -1)
-
-        #key_embed = torch.cat(( feat_pc_flatten, feat_img_flatten ), dim= -1 ).transpose( 1, 2 )
-        #key_pos_embed = torch.cat(( pc_pe, img_pe ), dim= 1 )
+        #pc_pe = self.bev_embedding(self.pos2embed( bev_pos, num_pos_feats = self.pos_embed_channel ))
 
 
         #################################
@@ -434,11 +414,10 @@ class MFFusionHead(nn.Module):
         
         B, V, C, H_, W_ = img_feats.shape
         img_tokens_reference_points = img_feats.new_zeros(B, V, H_, W_, 2)
-        #front_points_number = []
         for i in range(batch_size):
             frontboolmap_flatten[i, front_idx[i]] = True
             front_points = self.get_front_points( points[i], frontboolmap_flatten[i] )
-            #front_points_number.append( points[i].shape[0] )
+            #print( front_points.shape )
             img_tokens_reference_points[i] = self.get_img_tokens_reference_points( 
                 front_points, img_feats[i], img_metas[i] )
             
@@ -450,15 +429,6 @@ class MFFusionHead(nn.Module):
         key_pos_embed = self.bev_embedding(self.pos2embed( reference_points, num_pos_feats = self.pos_embed_channel ))
 
         frontboolmap = frontboolmap_flatten.view(batch_size, H, W)
-#
-        #front_feat_flatten = feat_flatten.gather( index = front_idx[:, None, :].expand(
-        #    -1, feat_flatten.shape[1], -1), dim = -1 )
-        #front_pos =  bev_pos.gather(
-        #    index= front_idx[..., None].expand(
-        #        -1, -1, bev_pos.shape[-1]), dim=1 )
-#
-        #key_embed = front_feat_flatten.transpose( 1, 2 )
-        #key_pos_embed = self.bev_embedding(self.pos2embed( front_pos, num_pos_feats = self.pos_embed_channel ))
 
         #################################
         # query initialization
@@ -670,10 +640,13 @@ class MFFusionHead(nn.Module):
         bboxes_tensor = boxes_dict[0]['bboxes']
         gt_bboxes_tensor = gt_bboxes_3d.tensor.to(score.device)
         
-        # isnotnan = torch.isfinite(bboxes_tensor).all(dim=-1)
-        # bboxes_tensor = bboxes_tensor[isnotnan]
-        # score = score[..., isnotnan]
-        # num_proposals = bboxes_tensor.shape[0]
+        isnotnan = torch.isfinite(bboxes_tensor).all(dim=-1)
+        print( "invalid bbox number: {}.".format(num_proposals - isnotnan2.sum()) )
+        #bboxes_tensor = bboxes_tensor[isnotnan]
+        #score = score[..., isnotnan]
+        isnotnan2 = torch.isfinite(score).all(dim=1)
+        print( "invalid score number: {}.".format(num_proposals - isnotnan2.sum())  )
+        #num_proposals = bboxes_tensor.shape[0]
 
 
         assign_result = None
