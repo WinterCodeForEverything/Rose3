@@ -477,10 +477,10 @@ class MFFusionHead(nn.Module):
                   padding:(-padding)] = local_max_inner
         # for Pedestrian & Traffic_cone in nuScenes
         if self.train_cfg['dataset'] == 'nuScenes':
-            local_max[:, 5, ] = F.max_pool2d(
-                heatmap[:, 5], kernel_size=1, stride=1, padding=0)
-            local_max[:, 6, ] = F.max_pool2d(
-                heatmap[:, 6], kernel_size=1, stride=1, padding=0)
+            local_max[:, 8, ] = F.max_pool2d(
+                heatmap[:, 8], kernel_size=1, stride=1, padding=0)
+            local_max[:, 9, ] = F.max_pool2d(
+                heatmap[:, 9], kernel_size=1, stride=1, padding=0)
         elif self.train_cfg[
                 'dataset'] == 'Waymo':  # for Pedestrian & Cyclist in Waymo
             local_max[:, 1, ] = F.max_pool2d(
@@ -652,7 +652,6 @@ class MFFusionHead(nn.Module):
         gt_bboxes_3d = gt_instances_3d.bboxes_3d
         gt_labels_3d = gt_instances_3d.labels_3d
         num_proposals = preds_dict['center'].shape[-1]
-        #print( gt_labels_3d.shape )
 
         # get pred boxes, carefully ! don't change the network outputs
         score = copy.deepcopy(preds_dict['heatmap'].detach())
@@ -671,10 +670,10 @@ class MFFusionHead(nn.Module):
         bboxes_tensor = boxes_dict[0]['bboxes']
         gt_bboxes_tensor = gt_bboxes_3d.tensor.to(score.device)
         
-        #isnotnan = torch.isfinite(bboxes_tensor).all(dim=-1)
-        #bboxes_tensor = bboxes_tensor[isnotnan]
-        #score = score[..., isnotnan]
-        #num_proposals = bboxes_tensor.shape[0]
+        # isnotnan = torch.isfinite(bboxes_tensor).all(dim=-1)
+        # bboxes_tensor = bboxes_tensor[isnotnan]
+        # score = score[..., isnotnan]
+        # num_proposals = bboxes_tensor.shape[0]
 
 
         assign_result = None
