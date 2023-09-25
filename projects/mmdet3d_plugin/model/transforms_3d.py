@@ -182,7 +182,7 @@ class MFFusionGlobalRotScaleTrans(GlobalRotScaleTrans):
 
         lidar_augs = np.eye(4)
         lidar_augs[:3, :3] *= input_dict['pcd_scale_factor']
-        lidar_augs[:3, :3] *= input_dict['pcd_rotation']
+        lidar_augs[:3, :3] *= input_dict['pcd_rotation'].cpu().numpy()
         lidar_augs[:3, 3] = input_dict['pcd_trans']
 
         if 'lidar_aug_matrix' not in input_dict:
