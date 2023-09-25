@@ -341,8 +341,8 @@ class MFFusionHead(nn.Module):
 
         front_points_mask = frontboolmap_flatten.gather( index = idx[mask].long(), dim = -1 )
 
-        points = points[mask]
-        front_points = points[front_points_mask]
+        #points = points[mask]
+        front_points = points[mask][front_points_mask]
         return front_points[:, :3]
     
     @torch.no_grad()    
@@ -437,7 +437,7 @@ class MFFusionHead(nn.Module):
         #front_points_number = []
         for i in range(batch_size):
             frontboolmap_flatten[i, front_idx[i]] = True
-            front_points = self.get_front_points( points[i].clone(), frontboolmap_flatten[i] )
+            front_points = self.get_front_points( points[i], frontboolmap_flatten[i] )
             #front_points_number.append( points[i].shape[0] )
             img_tokens_reference_points[i] = self.get_img_tokens_reference_points( 
                 front_points, img_feats[i], img_metas[i] )
