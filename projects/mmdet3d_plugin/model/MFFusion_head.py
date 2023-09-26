@@ -183,7 +183,7 @@ class MFFusionHead(nn.Module):
         scale = 2 * math.pi
         pos = pos * scale
         dim_t = torch.arange(num_pos_feats, dtype=torch.float32, device=pos.device)
-        dim_t = 2 * (dim_t // 2) / num_pos_feats + 1
+        dim_t = 2 * torch.div(dim_t, 2, rounding_mode='floor') / num_pos_feats + 1
         pos_x = pos[..., 0, None] / dim_t
         pos_y = pos[..., 1, None] / dim_t
         pos_x = torch.stack((pos_x[..., 0::2].sin(), pos_x[..., 1::2].cos()), dim=-1).flatten(-2)
@@ -640,13 +640,13 @@ class MFFusionHead(nn.Module):
         bboxes_tensor = boxes_dict[0]['bboxes']
         gt_bboxes_tensor = gt_bboxes_3d.tensor.to(score.device)
         
-        isnotnan = torch.isfinite(bboxes_tensor).all(dim=-1)
-        print( "invalid bbox number: {}.".format(num_proposals - isnotnan.sum()) )
-        #bboxes_tensor = bboxes_tensor[isnotnan]
-        #score = score[..., isnotnan]
-        isnotnan2 = torch.isfinite(score).all(dim=1)
-        print( "invalid score number: {}.".format(num_proposals - isnotnan2.sum())  )
-        #num_proposals = bboxes_tensor.shape[0]
+        # isnotnan = torch.isfinite(bboxes_tensor).all(dim=-1)
+        # print( "invalid bbox number: {}.".format(num_proposals - isnotnan.sum()) )
+        # #bboxes_tensor = bboxes_tensor[isnotnan]
+        # #score = score[..., isnotnan]
+        # isnotnan2 = torch.isfinite(score).all(dim=1)
+        # print( "invalid score number: {}.".format(num_proposals - isnotnan2.sum())  )
+        # #num_proposals = bboxes_tensor.shape[0]
 
 
         assign_result = None
