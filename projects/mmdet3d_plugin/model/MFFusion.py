@@ -207,17 +207,17 @@ class MFDetector(MVXTwoStageDetector):
         points = batch_inputs_dict.get('points', None)
         img_feats = self.extract_img_feat(imgs, batch_input_metas)
         pts_feats = self.extract_pts_feat2(points)
-        sample_points = []
-        for point in points:
-            xyz = point[None, :, :3]
-            indices = self.points_sampler( xyz, None )
-            sample_xyz = gather_points( xyz.transpose(1, 2).contiguous(),
-                                        indices).transpose(1, 2).contiguous()
-            sample_points.append( sample_xyz  )
-        sample_points = torch.cat( sample_points, dim=0 )
+        # sample_points = []
+        # for point in points:
+        #     xyz = point[None, :, :3]
+        #     indices = self.points_sampler( xyz, None )
+        #     sample_xyz = gather_points( xyz.transpose(1, 2).contiguous(),
+        #                                 indices).transpose(1, 2).contiguous()
+        #     sample_points.append( sample_xyz  )
+        # sample_points = torch.cat( sample_points, dim=0 )
         #assert( sample_points.shape[0] == pts_feats.shape[0])
         #print( sample_points.shape )
-        return ( sample_points, pts_feats, img_feats )
+        return ( points, pts_feats, img_feats )
 
     def loss(self, batch_inputs_dict: Dict[List, torch.Tensor],
              batch_data_samples: List[Det3DDataSample],
