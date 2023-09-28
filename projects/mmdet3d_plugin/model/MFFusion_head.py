@@ -351,16 +351,15 @@ class MFFusionHead(nn.Module):
     
     @torch.no_grad()    
     def get_img_tokens_reference_points( self, front_points, img_feats, img_metas ):
-        #N, _ = front_points.shape
+        _, N, _ = front_points.shape
         B, V, C, H, W = img_feats.shape
         image_shape = img_metas[0]['pad_shape']
         pad_h, pad_w = image_shape[0], image_shape[1]
-        reference_points = img_feats.new_zeros( B, V, H, W, 2 )
-        reference_points_mask = img_feats.new_zeros( B, V, H, W )
+        front_points = front_points.unsqueeze(1).repeat(1, V, 1, 1)
 
         #lidar_aug_matrix = torch.from_numpy(meta['lidar_aug_matrix']).float().to(front_points.device)
         lidars2imgs = np.concatenate([meta['lidar2img'] for meta in img_metas])
-        print( lidars2imgs.shape )
+        #print( lidars2imgs.shape )
         lidars2imgs = torch.from_numpy(lidars2imgs).float().to(front_points.device)
         #lidars2imgs = torch.from_numpy(np.stack([meta['lidar2img'] for meta in img_metas])).float().to(front_points.device)
         #img_aug_matrix = torch.from_numpy(meta['img_aug_matrix']).float().to(front_points.device)
@@ -368,7 +367,7 @@ class MFFusionHead(nn.Module):
 
 
         proj_points = torch.einsum('bnd, bvcd -> bvnc', torch.cat([front_points, front_points.new_ones(*front_points.shape[:-1], 1)], dim=-1), lidars2imgs)
-        proj_points_clone = proj_points.clone()
+        proj_points_clone = proj_points.clone().view(B*V, N, -1 )
         z_mask = (proj_points[..., 2:3].detach() > 0) & ( proj_points[..., 2:3].detach() < 1000.0 )
         proj_points_clone[..., :3] = proj_points[..., :3] / (proj_points[..., 2:3].detach() + z_mask * 1e-6 - (~z_mask) * 1e-6)
         w_idx = torch.div( proj_points_clone[..., 0]*W, pad_w, rounding_mode='floor').long()
@@ -389,14 +388,17 @@ class MFFusionHead(nn.Module):
         kept[..., 1:] = (ranks[..., 1:] != ranks[..., :-1])
 
         w_idx, h_idx =  w_idx[kept], h_idx[kept]
-        front_points_kept = front_points.clone()[kept.unsqueeze(-1).expand_as(front_points)]
+        front_points = front_points.view(B*V, N, 3)
+        front_points_kept = front_points[kept.unsqueeze(-1).expand_as(front_points)]
 
-        for i in range(B):
-            reference_points[i,range(V), h_idx[i, :, :-1], w_idx[i, :, :-1]] = front_points_kept[:, :-1, :2]
-            reference_points_mask[i, range(V), h_idx[i, :, :-1], w_idx[i, :, :-1]] = 1
+        reference_points = img_feats.new_zeros( B*V, H, W, 2 )
+        reference_points_mask = img_feats.new_zeros( B*V, H, W, dytpe=torch.bool )
+        for i in range(B*V):
+            reference_points[i, h_idx[i, :-1], w_idx[i, :-1]] = front_points_kept[i, :-1, :2]
+            reference_points_mask[i, h_idx[i, :-1], w_idx[i, :-1]] = True
 
-        reference_points_mask_test = img_feats.new_zeros( B, V, H, W)
-        reference_points_mask_test[range(B), range(V), h_idx[:, :, :-1], w_idx[:, :, :-1]] = 1
+        reference_points_mask_test = img_feats.new_zeros( B*V, H, W, dytpe=torch.bool)
+        reference_points_mask_test[range(B*V), h_idx[:, :-1], w_idx[:, :-1]] = True
 
         assert torch.all( reference_points_mask == reference_points_mask_test )
         
