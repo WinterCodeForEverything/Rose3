@@ -358,8 +358,7 @@ class MFFusionHead(nn.Module):
         front_points = front_points.unsqueeze(1).repeat(1, V, 1, 1)
 
         #lidar_aug_matrix = torch.from_numpy(meta['lidar_aug_matrix']).float().to(front_points.device)
-        lidars2imgs = np.concatenate([meta['lidar2img'] for meta in img_metas])
-        #print( lidars2imgs.shape )
+        lidars2imgs = np.stack([meta['lidar2img'] for meta in img_metas])
         lidars2imgs = torch.from_numpy(lidars2imgs).float().to(front_points.device)
         #lidars2imgs = torch.from_numpy(np.stack([meta['lidar2img'] for meta in img_metas])).float().to(front_points.device)
         #img_aug_matrix = torch.from_numpy(meta['img_aug_matrix']).float().to(front_points.device)
@@ -378,7 +377,6 @@ class MFFusionHead(nn.Module):
         depth = proj_points[..., 2] 
         w_idx[~mask], h_idx[~mask], depth[~mask] = W, H, 1000.0
         ranks = h_idx*W + w_idx
-        print( ranks.shape )
         sort = ( ranks + depth/1001. ).argsort(dim = -1)
         w_idx = w_idx.gather(index = sort, dim = -1)
         h_idx = h_idx.gather(index = sort, dim = -1)
@@ -401,8 +399,9 @@ class MFFusionHead(nn.Module):
         reference_points_mask_test[range(B*V), h_idx[:, :-1], w_idx[:, :-1]] = True
 
         assert torch.all( reference_points_mask == reference_points_mask_test )
+
         
-        return reference_points, reference_points_mask
+        return reference_points.view( B, V,  H, W, 2 ), reference_points_mask.view( B, V,  H, W )
 
     def forward_single(self, points, pts_feats, img_feats, img_metas):
 
