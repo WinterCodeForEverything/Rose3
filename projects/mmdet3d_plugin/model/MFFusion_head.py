@@ -35,7 +35,7 @@ class MFFusionHead(nn.Module):
         in_channels=128 * 3,
         hidden_channel=128,
         num_classes=4,
-        fps_number=16384,
+        fps_number=200000,
         # config for Transformer
         decoder_layer=dict(),
         num_heads=8,
@@ -83,7 +83,7 @@ class MFFusionHead(nn.Module):
         self.sampling = False
 
         self.pos_embed_channel = hidden_channel
-        self.focus_ratio = 0.5
+        self.focus_ratio = 0.3
 
         # a shared convolution
         self.shared_conv = build_conv_layer(
