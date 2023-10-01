@@ -345,7 +345,6 @@ class MFFusionHead(nn.Module):
 
         front_points_mask = frontboolmap_flatten.gather( index = idx[mask].long(), dim = -1 )
 
-        #points = points[mask]
         front_points = points[mask][front_points_mask]
         return front_points[:, :3]
     
@@ -388,16 +387,13 @@ class MFFusionHead(nn.Module):
         front_points = front_points.gather(index = sort.unsqueeze(-1).expand(-1, -1, 3), dim = 1 )
         kept = ranks.new_ones(*ranks.shape, dtype=torch.bool)
         kept[..., 1:] = (ranks[..., 1:] != ranks[..., :-1])
-        
-        w_idx_clone = w_idx.clone()
-        h_idx_clone = h_idx.clone()
 
         #print( front_points.shape, kept.shape, w_idx.shape, h_idx.shape )
 
         reference_points = img_feats.new_zeros( B*V, H, W, 3 )
         reference_points_mask = img_feats.new_zeros( B*V, H, W, dtype=torch.bool )
         for i in range(B*V):
-            w_idx_i, h_idx_i =  w_idx_clone[i, kept[i]], h_idx_clone[i, kept[i]]
+            w_idx_i, h_idx_i =  w_idx[i, kept[i]], h_idx[i, kept[i]]
             front_points_i = front_points[i, kept[i], :]
             reference_points[i, h_idx_i[:-1], w_idx_i[:-1]] = front_points_i[:-1]
             reference_points_mask[i, h_idx_i[:-1], w_idx_i[:-1]] = True
@@ -436,15 +432,20 @@ class MFFusionHead(nn.Module):
 
         front_idx = frontmap_flatten.argsort(
                     dim=-1, descending=True)[..., :focus_token_nums]
-        frontboolmap_flatten= frontmap_flatten.new_zeros(*frontmap_flatten.shape, dtype=torch.bool)
+        frontboolmap_flatten = frontmap_flatten.new_zeros(*frontmap_flatten.shape, dtype=torch.bool)
 
         
         sampled_points = pts_feats.new_zeros(batch_size, self.fps_number, 3)
         for i in range(batch_size):
             frontboolmap_flatten[i, front_idx[i]] = True
             front_points = self.get_front_points( points[i][:,:3], frontboolmap_flatten[i] )
-            sampled_points_idx = furthest_point_sample(front_points.unsqueeze(0), self.fps_number).squeeze(0)
-            sampled_points[i] = front_points[sampled_points_idx.long()]
+            #print( front_points.shape )
+            if front_points.shape[0] >= self.fps_number:
+                sampled_points[i] = front_points[:self.fps_number]
+            else:
+                padding = front_points.new_zeros( self.fps_number - front_points.shape[0], 3)
+                sampled_points[i] = torch.cat((front_points, padding), dim=0)
+
         
   
         img_tokens_reference_points, img_tokens_masks = self.get_img_tokens_reference_points( 
